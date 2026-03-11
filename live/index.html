@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <meta name="description" content="Free video conferencing - No signup required"/>
+  <meta name="theme-color" content="#e94560"/>
+  <title>HeartSpace Video - Free Video Calls</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%23e94560' width='180' height='180' rx='30'/><path fill='white' d='M40 50h100v80H40z'/><circle fill='white' cx='65' cy='85' r='8'/><path fill='%23e94560' d='M55 70v40M75 70v40'/></svg>">
+  
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📹</text></svg>">
+</head>
+<body>
+
+<div id="app" class="app">
+  
+  <!-- ==================== HEADER ==================== -->
+  <header class="header">
+    <div class="header-brand">
+      <span class="logo-icon">📹</span>
+      <h1 class="logo-text">HeartSpace<span>Video</span></h1>
+    </div>
+    <div class="header-actions">
+      <button id="pipBtn" class="btn-icon hidden" title="Picture-in-Picture">🖼️</button>
+      <button id="fullscreenBtn" class="btn-icon hidden" title="Fullscreen">⛶</button>
+      <button id="settingsBtn" class="btn-icon" title="Settings">⚙️</button>
+      <button id="themeBtn" class="btn-icon" title="Toggle Theme">🌙</button>
+    </div>
+  </header>
+
+  <!-- ==================== CONNECTION STATUS ==================== -->
+  <div id="connectionBar" class="connection-bar">
+    <div class="connection-dot"></div>
+    <span class="connection-text">Connecting...</span>
+  </div>
+
+  <!-- ==================== PRE-CALL SCREEN ==================== -->
+  <main id="preCallScreen" class="screen pre-call-screen">
+    
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-icon-wrapper">
+        <span class="hero-icon">📹</span>
+        <div class="hero-pulse"></div>
+      </div>
+      <h2 class="hero-title">Video Conferencing</h2>
+      <p class="hero-subtitle">Free HD video calls • No signup • Screen sharing</p>
+    </div>
+
+    <!-- Setup Card -->
+    <div class="card setup-card">
+      
+      <!-- Preview Video -->
+      <div class="preview-section">
+        <div class="preview-container">
+          <video id="previewVideo" autoplay muted playsinline></video>
+          <div id="previewPlaceholder" class="preview-placeholder">
+            <span>📷</span>
+            <p>Camera preview</p>
+          </div>
+          <div class="preview-controls">
+            <button id="previewCameraBtn" class="preview-btn active" title="Toggle Camera">📹</button>
+            <button id="previewMicBtn" class="preview-btn active" title="Toggle Mic">🎤</button>
+            <button id="flipCameraBtn" class="preview-btn" title="Flip Camera">🔄</button>
+          </div>
+        </div>
+        <p class="preview-hint">Check your camera and mic before joining</p>
+      </div>
+
+      <!-- Divider -->
+      <div class="divider">
+        <span>Setup your call</span>
+      </div>
+
+      <!-- Your Name -->
+      <div class="form-group">
+        <label class="form-label">
+          <span class="label-icon">👤</span>
+          Your Name
+        </label>
+        <input 
+          type="text" 
+          id="userName" 
+          class="form-input" 
+          placeholder="Enter your name"
+          maxlength="30"
+          autocomplete="off"
+        />
+      </div>
+
+      <!-- Room ID -->
+      <div class="form-group">
+        <label class="form-label">
+          <span class="label-icon">🏠</span>
+          Room ID
+        </label>
+        <div class="input-with-actions">
+          <input 
+            type="text" 
+            id="roomId" 
+            class="form-input" 
+            placeholder="Enter room ID"
+            maxlength="50"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="generateBtn" class="btn-mini" title="Generate Random">🎲</button>
+          <button id="copyRoomBtn" class="btn-mini" title="Copy">📋</button>
+        </div>
+      </div>
+
+      <!-- Video Quality -->
+      <div class="form-group">
+        <label class="form-label">
+          <span class="label-icon">📊</span>
+          Video Quality
+        </label>
+        <div class="quality-options">
+          <label class="quality-option">
+            <input type="radio" name="quality" value="hd" checked/>
+            <span class="quality-label">
+              <span class="quality-icon">🎬</span>
+              <span class="quality-name">HD</span>
+              <span class="quality-desc">720p</span>
+            </span>
+          </label>
+          <label class="quality-option">
+            <input type="radio" name="quality" value="sd"/>
+            <span class="quality-label">
+              <span class="quality-icon">📺</span>
+              <span class="quality-name">SD</span>
+              <span class="quality-desc">480p</span>
+            </span>
+          </label>
+          <label class="quality-option">
+            <input type="radio" name="quality" value="low"/>
+            <span class="quality-label">
+              <span class="quality-icon">📱</span>
+              <span class="quality-name">Low</span>
+              <span class="quality-desc">360p</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <button id="createBtn" class="btn btn-primary btn-large" disabled>
+          <span class="btn-content">
+            <span class="btn-icon">➕</span>
+            <span class="btn-label">Create Room</span>
+          </span>
+          <span class="btn-loader"></span>
+        </button>
+        <button id="joinBtn" class="btn btn-secondary btn-large" disabled>
+          <span class="btn-content">
+            <span class="btn-icon">🚀</span>
+            <span class="btn-label">Join Room</span>
+          </span>
+          <span class="btn-loader"></span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Features -->
+    <div class="features">
+      <div class="feature">
+        <span class="feature-icon">🔒</span>
+        <span class="feature-text">End-to-end encrypted</span>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">🌍</span>
+        <span class="feature-text">Works worldwide</span>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">💨</span>
+        <span class="feature-text">Low bandwidth mode</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ==================== WAITING SCREEN ==================== -->
+  <main id="waitingScreen" class="screen waiting-screen hidden">
+    <div class="waiting-container">
+      
+      <div class="waiting-animation">
+        <div class="waiting-rings">
+          <div class="ring"></div>
+          <div class="ring delay-1"></div>
+          <div class="ring delay-2"></div>
+        </div>
+        <div class="waiting-icon">📞</div>
+      </div>
+      
+      <h2 class="waiting-title">Waiting for Partner</h2>
+      <p class="waiting-room-id">Room: <strong id="waitingRoomId">-</strong></p>
+      
+      <div class="share-box">
+        <p class="share-label">Share this link:</p>
+        <div class="share-input-group">
+          <input type="text" id="waitingShareLink" class="form-input" readonly/>
+          <button id="waitingCopyBtn" class="btn btn-primary">
+            <span>📋</span> Copy
+          </button>
+        </div>
+        <div class="share-buttons">
+          <button id="shareWhatsApp" class="share-btn whatsapp">WhatsApp</button>
+          <button id="shareTelegram" class="share-btn telegram">Telegram</button>
+          <button id="shareEmail" class="share-btn email">Email</button>
+        </div>
+      </div>
+      
+      <button id="cancelWaitBtn" class="btn btn-danger">
+        <span>✕</span> Cancel
+      </button>
+      
+    </div>
+  </main>
+
+  <!-- ==================== IN-CALL SCREEN ==================== -->
+  <main id="inCallScreen" class="screen in-call-screen hidden">
+    
+    <!-- Video Grid -->
+    <div class="video-grid" id="videoGrid">
+      
+      <!-- Remote Video (Partner) -->
+      <div class="video-wrapper remote-video-wrapper" id="remoteVideoWrapper">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div id="remoteVideoOff" class="video-off hidden">
+          <span class="video-off-icon">📷</span>
+          <span class="video-off-text">Camera is off</span>
+        </div>
+        <div class="video-overlay">
+          <span class="video-name" id="remoteVideoName">Partner</span>
+          <span class="video-status" id="remoteVideoStatus"></span>
+        </div>
+        <div class="video-indicators">
+          <span id="remoteMicIndicator" class="mic-indicator">🎤</span>
+        </div>
+      </div>
+      
+      <!-- Local Video (You) -->
+      <div class="video-wrapper local-video-wrapper" id="localVideoWrapper">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <div id="localVideoOff" class="video-off hidden">
+          <span class="video-off-icon">📷</span>
+          <span class="video-off-text">Camera is off</span>
+        </div>
+        <div class="video-overlay">
+          <span class="video-name">You</span>
+        </div>
+        <button id="swapVideosBtn" class="swap-btn" title="Swap Videos">🔀</button>
+      </div>
+      
+    </div>
+
+    <!-- Call Info Bar -->
+    <div class="call-info-bar">
+      <div class="call-info-left">
+        <span class="call-room-name" id="callRoomName">Room</span>
+        <span class="call-timer" id="callTimer">00:00</span>
+      </div>
+      <div class="call-info-right">
+        <div class="connection-quality" id="connectionQuality">
+          <span class="quality-bars">
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+          </span>
+          <span class="quality-label">Excellent</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Call Controls -->
+    <div class="call-controls" id="callControls">
+      <button id="micBtn" class="control-btn active" title="Mute/Unmute">
+        <span class="control-icon">🎤</span>
+        <span class="control-label">Mic</span>
+      </button>
+      <button id="cameraBtn" class="control-btn active" title="Camera On/Off">
+        <span class="control-icon">📹</span>
+        <span class="control-label">Camera</span>
+      </button>
+      <button id="screenShareBtn" class="control-btn" title="Share Screen">
+        <span class="control-icon">🖥️</span>
+        <span class="control-label">Share</span>
+      </button>
+      <button id="chatBtn" class="control-btn" title="Chat">
+        <span class="control-icon">💬</span>
+        <span class="control-label">Chat</span>
+        <span id="chatBadge" class="control-badge hidden">0</span>
+      </button>
+      <button id="moreBtn" class="control-btn" title="More Options">
+        <span class="control-icon">⋯</span>
+        <span class="control-label">More</span>
+      </button>
+      <button id="hangupBtn" class="control-btn hangup" title="End Call">
+        <span class="control-icon">📵</span>
+        <span class="control-label">End</span>
+      </button>
+    </div>
+
+    <!-- More Options Menu -->
+    <div id="moreMenu" class="more-menu hidden">
+      <button class="more-option" id="flipCameraCallBtn">
+        <span>🔄</span> Flip Camera
+      </button>
+      <button class="more-option" id="pipCallBtn">
+        <span>🖼️</span> Picture-in-Picture
+      </button>
+      <button class="more-option" id="fullscreenCallBtn">
+        <span>⛶</span> Fullscreen
+      </button>
+      <button class="more-option" id="statsBtn">
+        <span>📊</span> Connection Stats
+      </button>
+    </div>
+
+  </main>
+
+  <!-- ==================== CHAT PANEL ==================== -->
+  <div id="chatPanel" class="chat-panel hidden">
+    <div class="chat-header">
+      <span class="chat-title">💬 Chat</span>
+      <button id="closeChatBtn" class="btn-close">✕</button>
+    </div>
+    <div id="chatMessages" class="chat-messages"></div>
+    <div id="typingIndicator" class="typing-indicator hidden">
+      <span class="typing-dots"><span></span><span></span><span></span></span>
+      <span class="typing-text">Partner is typing...</span>
+    </div>
+    <div class="chat-input-area">
+      <input type="text" id="chatInput" class="chat-input" placeholder="Type a message..." maxlength="1000"/>
+      <button id="sendMsgBtn" class="btn btn-primary btn-send">➤</button>
+    </div>
+  </div>
+
+  <!-- ==================== SETTINGS MODAL ==================== -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>⚙️ Settings</h3>
+        <button id="closeSettingsBtn" class="btn-close">✕</button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="setting-group">
+          <label class="setting-label">Camera</label>
+          <select id="cameraSelect" class="form-select"></select>
+        </div>
+        
+        <div class="setting-group">
+          <label class="setting-label">Microphone</label>
+          <select id="micSelect" class="form-select"></select>
+        </div>
+        
+        <div class="setting-group">
+          <label class="setting-label">Speaker</label>
+          <select id="speakerSelect" class="form-select"></select>
+        </div>
+        
+        <div class="setting-group">
+          <label class="setting-label">Speaker Volume</label>
+          <input type="range" id="volumeSlider" class="range-slider" min="0" max="100" value="100"/>
+        </div>
+        
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== STATS MODAL ==================== -->
+  <div id="statsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <h3>📊 Connection Stats</h3>
+        <button id="closeStatsBtn" class="btn-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-item">
+            <span class="stat-label">Resolution</span>
+            <span class="stat-value" id="statResolution">-</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Frame Rate</span>
+            <span class="stat-value" id="statFrameRate">-</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Bitrate</span>
+            <span class="stat-value" id="statBitrate">-</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Packet Loss</span>
+            <span class="stat-value" id="statPacketLoss">-</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Latency</span>
+            <span class="stat-value" id="statLatency">-</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Connection</span>
+            <span class="stat-value" id="statConnection">-</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TOAST CONTAINER ==================== -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ==================== HIDDEN AUDIO ELEMENTS ==================== -->
+  <audio id="remoteAudio" autoplay playsinline></audio>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+
+<!-- Service Worker Registration for PWA -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/live/sw.js')
+      .then((registration) => {
+        console.log('SW registered:', registration.scope);
+      })
+      .catch((error) => {
+        console.log('SW registration failed:', error);
+      });
+  });
+}
+
+// PWA Install Prompt
+let deferredPrompt;
+const installBtn = document.createElement('button');
+installBtn.id = 'installBtn';
+installBtn.className = 'install-prompt';
+installBtn.innerHTML = '📲 Install App';
+installBtn.style.display = 'none';
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.style.display = 'block';
+  
+  const headerActions = document.querySelector('.header-actions');
+  if (headerActions) {
+    installBtn.style.cssText = 'background: #e94560; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; margin-left: 8px;';
+    installBtn.onclick = () => {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the A2HS prompt');
+        }
+        deferredPrompt = null;
+        installBtn.style.display = 'none';
+      });
+    };
+    headerActions.appendChild(installBtn);
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  console.log('PWA installed successfully');
+  installBtn.style.display = 'none';
+});
+</script>
+
+</body>
+</html>

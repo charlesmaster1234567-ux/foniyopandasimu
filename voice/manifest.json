@@ -1,0 +1,30 @@
+{
+  "name": "HeartSpace Voice Calls",
+  "short_name": "HeartSpace Voice",
+  "description": "Free voice calling app - Connect instantly with anyone",
+  "start_url": "/voice",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#e94560",
+  "categories": ["social", "communication"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%23e94560' width='192' height='192' rx='32'/><path fill='white' d='M96 40c-15.5 0-28 12.5-28 28v32c0 15.5 12.5 28 28 28s28-12.5 28-28V68c0-15.5-12.5-28-28-28zm20 60c0 11-9 20-20 20s-20-9-20-20v-4c0-11 9-20 20-20s20 9 20 20v4zm-4-28c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect fill='%23e94560' width='512' height='512' rx='64'/><path fill='white' d='M256 80c-48.6 0-88 39.4-88 88v88c0 48.6 39.4 88 88 88s88-39.4 88-88V168c0-48.6-39.4-88-88-88zm56 176c0 30.9-25.1 56-56 56s-56-25.1-56-56v-12c0-30.9 25.1-56 56-56s56 25.1 56 56v12zm-12-84c-6.6 0-12-5.4-12-12s5.4-12 12-12 12 5.4 12 12-5.4 12-12 12z'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
+

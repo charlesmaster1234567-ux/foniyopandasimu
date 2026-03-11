@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <meta name="description" content="Free audio calling app - No signup required"/>
+  <meta name="theme-color" content="#e94560"/>
+  <title>HeartSpace Calls - Free Audio Calling</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%23e94560' width='180' height='180' rx='30'/><path fill='white' d='M90 35c-15.2 0-27.5 12.3-27.5 27.5v35c0 15.2 12.3 27.5 27.5 27.5s27.5-12.3 27.5-27.5v-35c0-15.2-12.3-27.5-27.5-27.5zm17.5 62.5c0 9.7-7.8 17.5-17.5 17.5s-17.5-7.8-17.5-17.5v-7.5c0-9.7 7.8-17.5 17.5-17.5s17.5 7.8 17.5 17.5v7.5zm-3.5-24.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z'/></svg>">
+  
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+</head>
+<body>
+
+<div id="app" class="app">
+  
+  <!-- Header -->
+  <header class="header">
+    <div class="header-brand">
+      <span class="logo-icon">💕</span>
+      <h1 class="logo-text">HeartSpace</h1>
+    </div>
+    <div class="header-actions">
+      <button id="historyBtn" class="btn-icon" title="Call History">📜</button>
+      <button id="themeBtn" class="btn-icon" title="Toggle Theme">🌙</button>
+    </div>
+  </header>
+
+  <!-- Connection Indicator -->
+  <div id="connectionBar" class="connection-bar">
+    <div class="connection-dot"></div>
+    <span class="connection-text">Connecting...</span>
+  </div>
+
+  <!-- ==================== PRE-CALL SCREEN ==================== -->
+  <main id="preCallScreen" class="screen">
+    
+    <!-- Hero Section -->
+    <div class="hero">
+      <div class="hero-icon">📞</div>
+      <h2 class="hero-title">Start a Call</h2>
+      <p class="hero-subtitle">Free audio calls, no signup required</p>
+    </div>
+
+    <!-- Setup Card -->
+    <div class="card setup-card">
+      
+      <!-- Your Name -->
+      <div class="form-group">
+        <label class="form-label">
+          <span class="label-icon">👤</span>
+          Your Name
+        </label>
+        <input 
+          type="text" 
+          id="userName" 
+          class="form-input" 
+          placeholder="Enter your name"
+          maxlength="20"
+          autocomplete="off"
+        />
+      </div>
+
+      <!-- Room ID -->
+      <div class="form-group">
+        <label class="form-label">
+          <span class="label-icon">🏠</span>
+          Room ID
+        </label>
+        <div class="input-with-actions">
+          <input 
+            type="text" 
+            id="roomId" 
+            class="form-input" 
+            placeholder="Enter or generate a room ID"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="generateBtn" class="btn-mini" title="Generate Random">🎲</button>
+          <button id="copyRoomBtn" class="btn-mini" title="Copy">📋</button>
+        </div>
+        <div id="roomStatus" class="room-status"></div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <button id="createBtn" class="btn btn-primary btn-large" disabled>
+          <span class="btn-content">
+            <span class="btn-icon">🎤</span>
+            <span class="btn-label">Create Room</span>
+          </span>
+          <span class="btn-loader"></span>
+        </button>
+        <button id="joinBtn" class="btn btn-secondary btn-large" disabled>
+          <span class="btn-content">
+            <span class="btn-icon">📞</span>
+            <span class="btn-label">Join Room</span>
+          </span>
+          <span class="btn-loader"></span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Instructions -->
+    <div class="instructions">
+      <div class="instruction-item">
+        <span class="instruction-number">1</span>
+        <span class="instruction-text">Enter your name & room ID</span>
+      </div>
+      <div class="instruction-item">
+        <span class="instruction-number">2</span>
+        <span class="instruction-text">Person A clicks <strong>Create Room</strong></span>
+      </div>
+      <div class="instruction-item">
+        <span class="instruction-number">3</span>
+        <span class="instruction-text">Person B enters same room ID & clicks <strong>Join</strong></span>
+      </div>
+    </div>
+
+    <!-- Share Link (shown after creating) -->
+    <div id="shareLinkBox" class="share-link-box hidden">
+      <div class="share-header">
+        <span class="share-icon">🔗</span>
+        <span class="share-title">Share this link with your partner</span>
+      </div>
+      <div class="share-input-group">
+        <input type="text" id="shareLink" class="form-input" readonly/>
+        <button id="copyLinkBtn" class="btn btn-primary">Copy Link</button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ==================== WAITING SCREEN ==================== -->
+  <main id="waitingScreen" class="screen hidden">
+    <div class="waiting-container">
+      <div class="waiting-animation">
+        <div class="waiting-circle"></div>
+        <div class="waiting-circle delay-1"></div>
+        <div class="waiting-circle delay-2"></div>
+        <div class="waiting-icon">📞</div>
+      </div>
+      <h2 class="waiting-title">Waiting for Partner</h2>
+      <p class="waiting-room">Room: <strong id="waitingRoomId">-</strong></p>
+      <p class="waiting-hint">Share the room ID with your partner</p>
+      
+      <div class="share-link-box">
+        <div class="share-input-group">
+          <input type="text" id="waitingShareLink" class="form-input" readonly/>
+          <button id="waitingCopyBtn" class="btn btn-primary">Copy</button>
+        </div>
+      </div>
+      
+      <button id="cancelWaitBtn" class="btn btn-danger">
+        <span class="btn-icon">✕</span>
+        Cancel
+      </button>
+    </div>
+  </main>
+
+  <!-- ==================== IN-CALL SCREEN ==================== -->
+  <main id="inCallScreen" class="screen hidden">
+    
+    <!-- Call Header -->
+    <div class="call-header">
+      <div class="call-avatar">
+        <span class="avatar-icon">💕</span>
+        <div class="avatar-pulse"></div>
+      </div>
+      <h2 id="callPartnerName" class="call-partner-name">Partner</h2>
+      <div id="callStatusText" class="call-status-text">Connecting...</div>
+      <div id="callTimer" class="call-timer">00:00</div>
+    </div>
+
+    <!-- Audio Elements (hidden) -->
+    <audio id="localAudio" autoplay muted></audio>
+    <audio id="remoteAudio" autoplay playsinline></audio>
+
+    <!-- Visualizers -->
+    <div class="visualizers">
+      <div class="visualizer-box">
+        <div class="visualizer-bars" id="localBars">
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        </div>
+        <span class="visualizer-label">You</span>
+      </div>
+      <div class="visualizer-box">
+        <div class="visualizer-bars" id="remoteBars">
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        </div>
+        <span class="visualizer-label">Partner</span>
+      </div>
+    </div>
+
+    <!-- Network Quality -->
+    <div id="networkQuality" class="network-quality excellent">
+      <span class="quality-bars">
+        <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+      </span>
+      <span class="quality-text">Excellent</span>
+    </div>
+
+    <!-- Call Controls -->
+    <div class="call-controls">
+      <button id="muteBtn" class="control-btn" title="Mute">
+        <span class="control-icon">🎤</span>
+        <span class="control-label">Mute</span>
+      </button>
+      <button id="speakerBtn" class="control-btn" title="Speaker">
+        <span class="control-icon">🔊</span>
+        <span class="control-label">Speaker</span>
+      </button>
+      <button id="chatBtn" class="control-btn" title="Chat">
+        <span class="control-icon">💬</span>
+        <span class="control-label">Chat</span>
+        <span id="chatBadge" class="control-badge hidden">0</span>
+      </button>
+      <button id="hangupBtn" class="control-btn hangup" title="End Call">
+        <span class="control-icon">📵</span>
+        <span class="control-label">End</span>
+      </button>
+    </div>
+
+    <!-- Volume Slider -->
+    <div class="volume-slider">
+      <span class="volume-icon">🔈</span>
+      <input type="range" id="volumeSlider" min="0" max="100" value="100"/>
+      <span class="volume-icon">🔊</span>
+    </div>
+
+  </main>
+
+  <!-- ==================== CHAT PANEL ==================== -->
+  <div id="chatPanel" class="chat-panel hidden">
+    <div class="chat-header">
+      <span class="chat-title">💬 Chat</span>
+      <button id="closeChatBtn" class="btn-close">✕</button>
+    </div>
+    <div id="chatMessages" class="chat-messages"></div>
+    <div id="typingIndicator" class="typing-indicator hidden">
+      <span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
+      <span class="typing-text">Partner is typing</span>
+    </div>
+    <div class="chat-input-area">
+      <input type="text" id="chatInput" class="chat-input" placeholder="Type a message..." maxlength="500"/>
+      <button id="sendMsgBtn" class="btn btn-primary btn-send">Send</button>
+    </div>
+  </div>
+
+  <!-- ==================== HISTORY MODAL ==================== -->
+  <div id="historyModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>📜 Call History</h3>
+        <button id="closeHistoryBtn" class="btn-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="historyList" class="history-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="clearHistoryBtn" class="btn btn-danger btn-sm">Clear History</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TOAST CONTAINER ==================== -->
+  <div id="toastContainer" class="toast-container"></div>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+
+<!-- Service Worker Registration for PWA -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/voice/sw.js')
+      .then((registration) => {
+        console.log('SW registered:', registration.scope);
+      })
+      .catch((error) => {
+        console.log('SW registration failed:', error);
+      });
+  });
+}
+
+// PWA Install Prompt
+let deferredPrompt;
+const installBtn = document.createElement('button');
+installBtn.id = 'installBtn';
+installBtn.className = 'install-prompt';
+installBtn.innerHTML = '📲 Install App';
+installBtn.style.display = 'none';
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.style.display = 'block';
+  
+  // Try to add to header or show differently
+  const headerActions = document.querySelector('.header-actions');
+  if (headerActions) {
+    installBtn.style.cssText = 'background: #e94560; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; margin-left: 8px;';
+    installBtn.onclick = () => {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the A2HS prompt');
+        }
+        deferredPrompt = null;
+        installBtn.style.display = 'none';
+      });
+    };
+    headerActions.appendChild(installBtn);
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  console.log('PWA installed successfully');
+  installBtn.style.display = 'none';
+});
+</script>
+
+</body>
+</html>

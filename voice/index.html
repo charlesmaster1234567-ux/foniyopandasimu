@@ -1,340 +1,445 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-  <meta name="description" content="Free audio calling app - No signup required"/>
-  <meta name="theme-color" content="#e94560"/>
-  <title>HeartSpace Calls - Free Audio Calling</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="HeartSpace Voice - Crystal clear voice calls with voice notes">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   
+  <title>HeartSpace Voice • Calls & Messages</title>
+  
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📞</text></svg>">
+  
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
   <link rel="stylesheet" href="styles.css">
-  
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%23e94560' width='180' height='180' rx='30'/><path fill='white' d='M90 35c-15.2 0-27.5 12.3-27.5 27.5v35c0 15.2 12.3 27.5 27.5 27.5s27.5-12.3 27.5-27.5v-35c0-15.2-12.3-27.5-27.5-27.5zm17.5 62.5c0 9.7-7.8 17.5-17.5 17.5s-17.5-7.8-17.5-17.5v-7.5c0-9.7 7.8-17.5 17.5-17.5s17.5 7.8 17.5 17.5v7.5zm-3.5-24.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z'/></svg>">
-  
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
 </head>
 <body>
-
-<div id="app" class="app">
-  
-  <!-- Header -->
-  <header class="header">
-    <div class="header-brand">
-      <span class="logo-icon">💕</span>
-      <h1 class="logo-text">HeartSpace</h1>
-    </div>
-    <div class="header-actions">
-      <button id="historyBtn" class="btn-icon" title="Call History">📜</button>
-      <button id="themeBtn" class="btn-icon" title="Toggle Theme">🌙</button>
-    </div>
-  </header>
-
-  <!-- Connection Indicator -->
-  <div id="connectionBar" class="connection-bar">
-    <div class="connection-dot"></div>
-    <span class="connection-text">Connecting...</span>
+  <!-- ============================================ -->
+  <!-- AMBIENT BACKGROUND -->
+  <!-- ============================================ -->
+  <div class="ambient-bg">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
   </div>
 
-  <!-- ==================== PRE-CALL SCREEN ==================== -->
-  <main id="preCallScreen" class="screen">
-    
-    <!-- Hero Section -->
-    <div class="hero">
-      <div class="hero-icon">📞</div>
-      <h2 class="hero-title">Start a Call</h2>
-      <p class="hero-subtitle">Free audio calls, no signup required</p>
-    </div>
+  <!-- ============================================ -->
+  <!-- CONNECTION BAR -->
+  <!-- ============================================ -->
+  <div id="connectionBar" class="connection-bar">
+    <span class="conn-dot"></span>
+    <span class="conn-text">Connecting...</span>
+  </div>
 
-    <!-- Setup Card -->
-    <div class="card setup-card">
-      
-      <!-- Your Name -->
-      <div class="form-group">
-        <label class="form-label">
-          <span class="label-icon">👤</span>
-          Your Name
-        </label>
-        <input 
-          type="text" 
-          id="userName" 
-          class="form-input" 
-          placeholder="Enter your name"
-          maxlength="20"
-          autocomplete="off"
-        />
-      </div>
+  <!-- ============================================ -->
+  <!-- AUDIO ELEMENTS (Hidden) -->
+  <!-- ============================================ -->
+  <audio id="localAudio" autoplay muted></audio>
+  <audio id="remoteAudio" autoplay></audio>
 
-      <!-- Room ID -->
-      <div class="form-group">
-        <label class="form-label">
-          <span class="label-icon">🏠</span>
-          Room ID
-        </label>
-        <div class="input-with-actions">
-          <input 
-            type="text" 
-            id="roomId" 
-            class="form-input" 
-            placeholder="Enter or generate a room ID"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <button id="generateBtn" class="btn-mini" title="Generate Random">🎲</button>
-          <button id="copyRoomBtn" class="btn-mini" title="Copy">📋</button>
+  <!-- ============================================ -->
+  <!-- PRE-CALL SCREEN -->
+  <!-- ============================================ -->
+  <main id="preCallScreen" class="screen pre-call">
+    <div class="container">
+      <!-- Header -->
+      <header class="header">
+        <div class="brand">
+          <div class="brand-icon">
+            <span>📞</span>
+            <div class="brand-glow"></div>
+          </div>
+          <div class="brand-info">
+            <h1>HeartSpace</h1>
+            <span class="brand-tag">VOICE</span>
+          </div>
         </div>
-        <div id="roomStatus" class="room-status"></div>
-      </div>
+        <nav class="header-nav">
+          <button id="historyBtn" class="nav-btn" title="Call History">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </button>
+          <button id="themeBtn" class="nav-btn" title="Toggle Theme">
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+          </button>
+        </nav>
+      </header>
 
-      <!-- Action Buttons -->
-      <div class="action-buttons">
-        <button id="createBtn" class="btn btn-primary btn-large" disabled>
-          <span class="btn-content">
-            <span class="btn-icon">🎤</span>
-            <span class="btn-label">Create Room</span>
-          </span>
-          <span class="btn-loader"></span>
-        </button>
-        <button id="joinBtn" class="btn btn-secondary btn-large" disabled>
-          <span class="btn-content">
-            <span class="btn-icon">📞</span>
-            <span class="btn-label">Join Room</span>
-          </span>
-          <span class="btn-loader"></span>
-        </button>
-      </div>
+      <!-- Hero -->
+      <section class="hero">
+        <div class="hero-visual">
+          <div class="wave-ring ring-1"></div>
+          <div class="wave-ring ring-2"></div>
+          <div class="wave-ring ring-3"></div>
+          <div class="hero-icon">
+            <span>🎙️</span>
+          </div>
+        </div>
+        <h2>Voice calls & <span class="gradient-text">voice notes</span></h2>
+        <p>Crystal clear audio with instant messaging</p>
+      </section>
 
+      <!-- Main Card -->
+      <section class="main-card glass">
+        <div class="input-group">
+          <label for="userName">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+            Your Name
+          </label>
+          <input type="text" id="userName" placeholder="Enter your name" maxlength="30" autocomplete="name">
+        </div>
+
+        <div class="input-group">
+          <label for="roomId">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M15 7h3a5 5 0 015 5 5 5 0 01-5 5h-3m-6 0H6a5 5 0 01-5-5 5 5 0 015-5h3"/><line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            Room ID
+          </label>
+          <div class="input-row">
+            <input type="text" id="roomId" placeholder="Enter or generate room ID" maxlength="50" autocomplete="off">
+            <button id="generateBtn" class="input-btn" title="Generate">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+              </svg>
+            </button>
+            <button id="copyRoomBtn" class="input-btn" title="Copy">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button id="createBtn" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            <span>Create Room</span>
+            <div class="btn-spinner"></div>
+          </button>
+          <button id="joinBtn" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/>
+            </svg>
+            <span>Join Room</span>
+            <div class="btn-spinner"></div>
+          </button>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section class="features">
+        <div class="feature glass-mini">
+          <span class="feature-icon">🎵</span>
+          <div>
+            <strong>HD Audio</strong>
+            <span>Crystal clear</span>
+          </div>
+        </div>
+        <div class="feature glass-mini">
+          <span class="feature-icon">🎤</span>
+          <div>
+            <strong>Voice Notes</strong>
+            <span>Record & send</span>
+          </div>
+        </div>
+        <div class="feature glass-mini">
+          <span class="feature-icon">💬</span>
+          <div>
+            <strong>Messages</strong>
+            <span>Real-time chat</span>
+          </div>
+        </div>
+        <div class="feature glass-mini">
+          <span class="feature-icon">🔒</span>
+          <div>
+            <strong>Secure</strong>
+            <span>End-to-end</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <p>Made with <span class="heart">❤️</span> by HeartSpace</p>
+      </footer>
     </div>
-
-    <!-- Instructions -->
-    <div class="instructions">
-      <div class="instruction-item">
-        <span class="instruction-number">1</span>
-        <span class="instruction-text">Enter your name & room ID</span>
-      </div>
-      <div class="instruction-item">
-        <span class="instruction-number">2</span>
-        <span class="instruction-text">Person A clicks <strong>Create Room</strong></span>
-      </div>
-      <div class="instruction-item">
-        <span class="instruction-number">3</span>
-        <span class="instruction-text">Person B enters same room ID & clicks <strong>Join</strong></span>
-      </div>
-    </div>
-
-    <!-- Share Link (shown after creating) -->
-    <div id="shareLinkBox" class="share-link-box hidden">
-      <div class="share-header">
-        <span class="share-icon">🔗</span>
-        <span class="share-title">Share this link with your partner</span>
-      </div>
-      <div class="share-input-group">
-        <input type="text" id="shareLink" class="form-input" readonly/>
-        <button id="copyLinkBtn" class="btn btn-primary">Copy Link</button>
-      </div>
-    </div>
-
   </main>
 
-  <!-- ==================== WAITING SCREEN ==================== -->
-  <main id="waitingScreen" class="screen hidden">
-    <div class="waiting-container">
-      <div class="waiting-animation">
-        <div class="waiting-circle"></div>
-        <div class="waiting-circle delay-1"></div>
-        <div class="waiting-circle delay-2"></div>
-        <div class="waiting-icon">📞</div>
-      </div>
-      <h2 class="waiting-title">Waiting for Partner</h2>
-      <p class="waiting-room">Room: <strong id="waitingRoomId">-</strong></p>
-      <p class="waiting-hint">Share the room ID with your partner</p>
-      
-      <div class="share-link-box">
-        <div class="share-input-group">
-          <input type="text" id="waitingShareLink" class="form-input" readonly/>
-          <button id="waitingCopyBtn" class="btn btn-primary">Copy</button>
+  <!-- ============================================ -->
+  <!-- WAITING SCREEN -->
+  <!-- ============================================ -->
+  <main id="waitingScreen" class="screen waiting hidden">
+    <div class="container">
+      <div class="waiting-card glass">
+        <div class="waiting-anim">
+          <div class="pulse-ring"></div>
+          <div class="waiting-icon">📞</div>
         </div>
+        
+        <h2>Waiting for someone...</h2>
+        <p>Share the link to invite</p>
+
+        <div class="room-tag">
+          <span class="room-label">Room</span>
+          <span id="waitingRoomId" class="room-id">---</span>
+        </div>
+
+        <div class="share-row">
+          <input type="text" id="waitingShareLink" readonly class="share-input">
+          <button id="waitingCopyBtn" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+            Copy
+          </button>
+        </div>
+
+        <button id="cancelWaitBtn" class="btn btn-danger">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+          Cancel
+        </button>
       </div>
-      
-      <button id="cancelWaitBtn" class="btn btn-danger">
-        <span class="btn-icon">✕</span>
-        Cancel
-      </button>
     </div>
   </main>
 
-  <!-- ==================== IN-CALL SCREEN ==================== -->
-  <main id="inCallScreen" class="screen hidden">
-    
+  <!-- ============================================ -->
+  <!-- IN-CALL SCREEN -->
+  <!-- ============================================ -->
+  <main id="inCallScreen" class="screen in-call hidden">
     <!-- Call Header -->
-    <div class="call-header">
-      <div class="call-avatar">
-        <span class="avatar-icon">💕</span>
-        <div class="avatar-pulse"></div>
-      </div>
-      <h2 id="callPartnerName" class="call-partner-name">Partner</h2>
-      <div id="callStatusText" class="call-status-text">Connecting...</div>
-      <div id="callTimer" class="call-timer">00:00</div>
-    </div>
-
-    <!-- Audio Elements (hidden) -->
-    <audio id="localAudio" autoplay muted></audio>
-    <audio id="remoteAudio" autoplay playsinline></audio>
-
-    <!-- Visualizers -->
-    <div class="visualizers">
-      <div class="visualizer-box">
-        <div class="visualizer-bars" id="localBars">
-          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    <header class="call-header">
+      <div class="call-info">
+        <div class="call-status">
+          <span class="status-dot pulse"></span>
+          <span id="callStatusText">Connecting...</span>
         </div>
-        <span class="visualizer-label">You</span>
+        <div id="callTimer" class="call-timer">00:00</div>
       </div>
-      <div class="visualizer-box">
-        <div class="visualizer-bars" id="remoteBars">
-          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-          <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-        </div>
-        <span class="visualizer-label">Partner</span>
+      <div id="networkQuality" class="net-badge excellent">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+          <path d="M12 3C6.95 3 3.15 4.85 0 7.23L12 22 24 7.25C20.85 4.87 17.05 3 12 3z"/>
+        </svg>
+        <span class="quality-text">Excellent</span>
       </div>
-    </div>
+    </header>
 
-    <!-- Network Quality -->
-    <div id="networkQuality" class="network-quality excellent">
-      <span class="quality-bars">
-        <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
-      </span>
-      <span class="quality-text">Excellent</span>
+    <!-- Call Avatar Section -->
+    <section class="call-avatar-section">
+      <div class="avatar-container">
+        <div class="avatar-ring active"></div>
+        <div class="avatar-circle">
+          <span id="partnerInitial">P</span>
+        </div>
+        <div class="sound-waves">
+          <span class="wave"></span>
+          <span class="wave"></span>
+          <span class="wave"></span>
+          <span class="wave"></span>
+          <span class="wave"></span>
+        </div>
+      </div>
+      <h2 id="callPartnerName" class="partner-name">Partner</h2>
+      <p class="call-label">Voice Call</p>
+    </section>
+
+    <!-- Share Link (Hidden) -->
+    <div id="shareLinkBox" class="share-float hidden">
+      <input type="text" id="shareLink" readonly>
+      <button id="copyLinkBtn" class="btn-icon-sm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+        </svg>
+      </button>
     </div>
 
     <!-- Call Controls -->
-    <div class="call-controls">
-      <button id="muteBtn" class="control-btn" title="Mute">
-        <span class="control-icon">🎤</span>
-        <span class="control-label">Mute</span>
-      </button>
-      <button id="speakerBtn" class="control-btn" title="Speaker">
-        <span class="control-icon">🔊</span>
-        <span class="control-label">Speaker</span>
-      </button>
-      <button id="chatBtn" class="control-btn" title="Chat">
-        <span class="control-icon">💬</span>
-        <span class="control-label">Chat</span>
-        <span id="chatBadge" class="control-badge hidden">0</span>
-      </button>
-      <button id="hangupBtn" class="control-btn hangup" title="End Call">
-        <span class="control-icon">📵</span>
-        <span class="control-label">End</span>
-      </button>
-    </div>
+    <footer class="call-controls">
+      <div class="controls-main">
+        <button id="muteBtn" class="ctrl-btn" data-label="Mute">
+          <div class="ctrl-icon">
+            <svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/>
+            </svg>
+            <svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 19v4M8 23h8"/>
+            </svg>
+          </div>
+          <span class="ctrl-label">Mute</span>
+        </button>
 
-    <!-- Volume Slider -->
-    <div class="volume-slider">
-      <span class="volume-icon">🔈</span>
-      <input type="range" id="volumeSlider" min="0" max="100" value="100"/>
-      <span class="volume-icon">🔊</span>
-    </div>
+        <button id="speakerBtn" class="ctrl-btn" data-label="Speaker">
+          <div class="ctrl-icon">
+            <svg class="icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/>
+            </svg>
+            <svg class="icon-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+          </div>
+          <span class="ctrl-label">Speaker</span>
+        </button>
 
+        <button id="hangupBtn" class="ctrl-btn hangup">
+          <div class="ctrl-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.574 2.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+          </div>
+          <span class="ctrl-label">End</span>
+        </button>
+
+        <button id="messageBtn" class="ctrl-btn" data-label="Messages">
+          <div class="ctrl-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+            </svg>
+          </div>
+          <span class="ctrl-label">Chat</span>
+          <span id="msgBadge" class="badge hidden">0</span>
+        </button>
+
+        <button id="voiceNoteBtn" class="ctrl-btn" data-label="Voice Note">
+          <div class="ctrl-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>
+            </svg>
+          </div>
+          <span class="ctrl-label">Voice</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- Messages Panel -->
+    <aside id="messagesPanel" class="messages-panel hidden">
+      <header class="panel-header">
+        <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+          </svg>
+          Messages
+        </h3>
+        <button id="closeMsgBtn" class="btn-icon-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </header>
+      
+      <div id="messagesList" class="messages-list"></div>
+      
+      <div id="typingIndicator" class="typing hidden">
+        <div class="typing-dots"><span></span><span></span><span></span></div>
+        <span>Partner is typing...</span>
+      </div>
+      
+      <footer class="panel-footer">
+        <div class="msg-input-row">
+          <button id="voiceRecordBtn" class="voice-btn" title="Record Voice Note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/>
+            </svg>
+          </button>
+          <input type="text" id="msgInput" placeholder="Type a message..." maxlength="500" autocomplete="off">
+          <button id="sendMsgBtn" class="send-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+      </footer>
+    </aside>
+
+    <!-- Voice Recording Overlay -->
+    <div id="voiceRecordOverlay" class="voice-overlay hidden">
+      <div class="voice-record-card glass">
+        <div class="record-visual">
+          <div class="record-pulse"></div>
+          <div class="record-icon">🎤</div>
+        </div>
+        <h3>Recording...</h3>
+        <p id="recordTimer" class="record-time">00:00</p>
+        <div class="record-actions">
+          <button id="cancelRecordBtn" class="btn btn-secondary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            Cancel
+          </button>
+          <button id="sendRecordBtn" class="btn btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 
-  <!-- ==================== CHAT PANEL ==================== -->
-  <div id="chatPanel" class="chat-panel hidden">
-    <div class="chat-header">
-      <span class="chat-title">💬 Chat</span>
-      <button id="closeChatBtn" class="btn-close">✕</button>
-    </div>
-    <div id="chatMessages" class="chat-messages"></div>
-    <div id="typingIndicator" class="typing-indicator hidden">
-      <span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
-      <span class="typing-text">Partner is typing</span>
-    </div>
-    <div class="chat-input-area">
-      <input type="text" id="chatInput" class="chat-input" placeholder="Type a message..." maxlength="500"/>
-      <button id="sendMsgBtn" class="btn btn-primary btn-send">Send</button>
-    </div>
-  </div>
-
-  <!-- ==================== HISTORY MODAL ==================== -->
+  <!-- ============================================ -->
+  <!-- HISTORY MODAL -->
+  <!-- ============================================ -->
   <div id="historyModal" class="modal hidden">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>📜 Call History</h3>
-        <button id="closeHistoryBtn" class="btn-close">✕</button>
+    <div class="modal-overlay"></div>
+    <div class="modal-box glass">
+      <header class="modal-header">
+        <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Call History
+        </h3>
+        <button id="closeHistoryBtn" class="btn-icon-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </header>
+      <div id="historyList" class="modal-body">
+        <div class="empty-state">
+          <span>📞</span>
+          <p>No calls yet</p>
+          <small>Your call history will appear here</small>
+        </div>
       </div>
-      <div class="modal-body">
-        <div id="historyList" class="history-list"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="clearHistoryBtn" class="btn btn-danger btn-sm">Clear History</button>
-      </div>
+      <footer class="modal-footer">
+        <button id="clearHistoryBtn" class="btn btn-danger btn-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+          </svg>
+          Clear All
+        </button>
+      </footer>
     </div>
   </div>
 
-  <!-- ==================== TOAST CONTAINER ==================== -->
+  <!-- ============================================ -->
+  <!-- TOAST CONTAINER -->
+  <!-- ============================================ -->
   <div id="toastContainer" class="toast-container"></div>
 
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script src="app.js"></script>
-
-<!-- Service Worker Registration for PWA -->
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/voice/sw.js')
-      .then((registration) => {
-        console.log('SW registered:', registration.scope);
-      })
-      .catch((error) => {
-        console.log('SW registration failed:', error);
-      });
-  });
-}
-
-// PWA Install Prompt
-let deferredPrompt;
-const installBtn = document.createElement('button');
-installBtn.id = 'installBtn';
-installBtn.className = 'install-prompt';
-installBtn.innerHTML = '📲 Install App';
-installBtn.style.display = 'none';
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  installBtn.style.display = 'block';
-  
-  // Try to add to header or show differently
-  const headerActions = document.querySelector('.header-actions');
-  if (headerActions) {
-    installBtn.style.cssText = 'background: #e94560; color: white; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; margin-left: 8px;';
-    installBtn.onclick = () => {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then((choiceResult) => {
-        if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted the A2HS prompt');
-        }
-        deferredPrompt = null;
-        installBtn.style.display = 'none';
-      });
-    };
-    headerActions.appendChild(installBtn);
-  }
-});
-
-window.addEventListener('appinstalled', () => {
-  console.log('PWA installed successfully');
-  installBtn.style.display = 'none';
-});
-</script>
-
+  <!-- Scripts -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

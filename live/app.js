@@ -1,167 +1,271 @@
 /**
- * HeartSpace Video v6.0
- * Full-Featured Video Conferencing App
+ * HeartSpace Live v5.5
+ * Real-Time Video Chat Application
+ * 100% Free - No Paid Services Required
  * 
  * Features:
- * - HD Video Calling
- * - Screen Sharing
- * - Camera Flip
+ * - HD Video/Audio calling
+ * - Screen sharing
+ * - In-call chat
+ * - Camera flip
  * - Picture-in-Picture
- * - Fullscreen Mode
- * - Live Chat
- * - Connection Stats
- * - Dark Mode
+ * - Fullscreen mode
+ * - Call history
+ * - Network quality monitoring
+ * - Auto-reconnection
+ * - Dark/Light theme
  */
 
 (function() {
   'use strict';
 
   // ============================================
+  // FREE ICE SERVERS CONFIGURATION
+  // ============================================
+  const ICE_SERVERS = [
+    // === STUN SERVERS (Free, for NAT traversal) ===
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun.stunprotocol.org:3478' },
+    { urls: 'stun:stun.voipbuster.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com:3478' },
+    
+    // === TURN SERVERS (Free, for relay when direct fails) ===
+    // OpenRelay by Metered (Free public TURN)
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    // Additional free TURN servers
+    {
+      urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
+      username: 'webrtc',
+      credential: 'webrtc'
+    },
+    {
+      urls: 'turn:relay.metered.ca:80',
+      username: 'e8dd65b92c62d5e24328ff6e',
+      credential: 'kLsEr9bZT+I5VGcf'
+    },
+    {
+      urls: 'turn:relay.metered.ca:443',
+      username: 'e8dd65b92c62d5e24328ff6e',
+      credential: 'kLsEr9bZT+I5VGcf'
+    },
+    {
+      urls: 'turn:relay.metered.ca:443?transport=tcp',
+      username: 'e8dd65b92c62d5e24328ff6e',
+      credential: 'kLsEr9bZT+I5VGcf'
+    }
+  ];
+
+  // ============================================
   // CONFIGURATION
   // ============================================
   const CONFIG = {
-    iceServers: [
-      // STUN servers (free, works for ~70% of connections)
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      // TURN servers (free fallback for NAT/firewall - from OpenRelay Project)
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-    ],
-    videoQuality: {
-      hd: { width: 1280, height: 720, frameRate: 30 },
-      sd: { width: 640, height: 480, frameRate: 24 },
-      low: { width: 320, height: 240, frameRate: 15 }
+    video: {
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 60 },
+      facingMode: 'user'
     },
-    audioConstraints: {
+    audio: {
       echoCancellation: true,
       noiseSuppression: true,
-      autoGainControl: true
+      autoGainControl: true,
+      sampleRate: 48000
+    },
+    connection: {
+      iceCandidatePoolSize: 10,
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
     }
   };
 
   // ============================================
-  // APPLICATION STATE
+  // APP STATE
   // ============================================
   const App = {
+    // Socket & WebRTC
     socket: null,
-    peerConnection: null,
+    pc: null,
     localStream: null,
     remoteStream: null,
     screenStream: null,
     
-    currentRoom: null,
-    currentRole: null,
-    partnerName: 'Partner',
+    // Room info
+    room: null,
+    role: null,
     myName: 'Anonymous',
+    partnerName: 'Partner',
     
-    isVideoEnabled: true,
-    isAudioEnabled: true,
-    isScreenSharing: false,
-    selectedQuality: 'hd',
-    currentCameraIndex: 0,
-    availableCameras: [],
+    // UI states
+    muted: false,
+    videoOff: false,
+    screenSharing: false,
+    frontCamera: true,
+    fullscreen: false,
+    pip: false,
+    chatOpen: false,
+    unreadMsgs: 0,
     
-    callStartTime: null,
+    // Timers
+    callStart: null,
     timerInterval: null,
-    statsInterval: null,
-    ringtoneInterval: null,
+    ringInterval: null,
+    qosInterval: null,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 3,
     
-    unreadMessages: 0,
-    isVideosSwapped: false,
+    // ICE handling
+    iceQueue: [],
+    iceReady: false,
     
-    elements: {}
+    // DOM cache
+    el: {}
   };
 
   // ============================================
-  // DOM CACHE
+  // UTILITY FUNCTIONS
   // ============================================
-  function $(id) {
-    return document.getElementById(id);
-  }
+  const $ = id => document.getElementById(id);
+  
+  const log = (msg, type = 'info') => {
+    const icons = { info: 'ℹ️', success: '✅', error: '❌', warn: '⚠️' };
+    console.log(`${icons[type]} [HeartSpace] ${msg}`);
+  };
 
-  function cacheElements() {
-    App.elements = {
-      // Connection
+  const toast = (message, type = 'info', duration = 4000) => {
+    const container = App.el.toastContainer;
+    if (!container) return;
+    
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    div.innerHTML = `<span>${icons[type]}</span><span>${message}</span>`;
+    container.appendChild(div);
+    
+    setTimeout(() => {
+      div.style.opacity = '0';
+      div.style.transform = 'translateX(100%)';
+      setTimeout(() => div.remove(), 300);
+    }, duration);
+  };
+
+  const escape = str => {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  };
+
+  const formatTime = secs => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const randomRoomId = () => {
+    const adj = ['happy', 'sunny', 'cozy', 'sweet', 'calm', 'warm', 'bright', 'cool'];
+    const noun = ['heart', 'star', 'moon', 'cloud', 'dream', 'wave', 'light', 'sky'];
+    return `${adj[Math.floor(Math.random() * adj.length)]}-${noun[Math.floor(Math.random() * noun.length)]}-${Math.floor(Math.random() * 1000)}`;
+  };
+
+  const shareLink = roomId => `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`;
+
+  const copyText = text => {
+    navigator.clipboard.writeText(text)
+      .then(() => toast('Copied!', 'success'))
+      .catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        toast('Copied!', 'success');
+      });
+  };
+
+  // ============================================
+  // DOM CACHING
+  // ============================================
+  const cacheDOM = () => {
+    App.el = {
+      // Bars & Containers
       connectionBar: $('connectionBar'),
-      connectionText: document.querySelector('.connection-text'),
+      connText: document.querySelector('.connection-text'),
+      toastContainer: $('toastContainer'),
       
       // Screens
-      preCallScreen: $('preCallScreen'),
-      waitingScreen: $('waitingScreen'),
-      inCallScreen: $('inCallScreen'),
-      
-      // Preview
-      previewVideo: $('previewVideo'),
-      previewPlaceholder: $('previewPlaceholder'),
-      previewCameraBtn: $('previewCameraBtn'),
-      previewMicBtn: $('previewMicBtn'),
-      flipCameraBtn: $('flipCameraBtn'),
+      preCall: $('preCallScreen'),
+      waiting: $('waitingScreen'),
+      inCall: $('inCallScreen'),
       
       // Inputs
       userName: $('userName'),
       roomId: $('roomId'),
+      roomStatus: $('roomStatus'),
       
-      // Buttons
+      // Pre-call buttons
       generateBtn: $('generateBtn'),
       copyRoomBtn: $('copyRoomBtn'),
       createBtn: $('createBtn'),
       joinBtn: $('joinBtn'),
-      
-      // Quality
-      qualityOptions: document.querySelectorAll('input[name="quality"]'),
+      previewBtn: $('previewBtn'),
       
       // Waiting
+      cancelWaitBtn: $('cancelWaitBtn'),
       waitingRoomId: $('waitingRoomId'),
       waitingShareLink: $('waitingShareLink'),
       waitingCopyBtn: $('waitingCopyBtn'),
-      cancelWaitBtn: $('cancelWaitBtn'),
-      shareWhatsApp: $('shareWhatsApp'),
-      shareTelegram: $('shareTelegram'),
-      shareEmail: $('shareEmail'),
+      waitingPreview: $('waitingPreview'),
       
-      // In-Call Videos
-      videoGrid: $('videoGrid'),
+      // Share link
+      shareLinkBox: $('shareLinkBox'),
+      shareLink: $('shareLink'),
+      copyLinkBtn: $('copyLinkBtn'),
+      
+      // Call info
+      partnerName: $('callPartnerName'),
+      statusText: $('callStatusText'),
+      timer: $('callTimer'),
+      netQuality: $('networkQuality'),
+      
+      // Videos
       localVideo: $('localVideo'),
       remoteVideo: $('remoteVideo'),
-      localVideoWrapper: $('localVideoWrapper'),
-      remoteVideoWrapper: $('remoteVideoWrapper'),
-      localVideoOff: $('localVideoOff'),
-      remoteVideoOff: $('remoteVideoOff'),
-      remoteVideoName: $('remoteVideoName'),
-      remoteVideoStatus: $('remoteVideoStatus'),
-      remoteMicIndicator: $('remoteMicIndicator'),
-      swapVideosBtn: $('swapVideosBtn'),
-      
-      // Call Info
-      callRoomName: $('callRoomName'),
-      callTimer: $('callTimer'),
-      connectionQuality: $('connectionQuality'),
+      localContainer: $('localVideoContainer'),
+      remoteContainer: $('remoteVideoContainer'),
       
       // Controls
-      micBtn: $('micBtn'),
-      cameraBtn: $('cameraBtn'),
-      screenShareBtn: $('screenShareBtn'),
+      muteBtn: $('muteBtn'),
+      videoBtn: $('videoBtn'),
+      screenBtn: $('screenShareBtn'),
+      flipBtn: $('flipCameraBtn'),
       chatBtn: $('chatBtn'),
-      moreBtn: $('moreBtn'),
+      fullscreenBtn: $('fullscreenBtn'),
+      pipBtn: $('pipBtn'),
+      settingsBtn: $('settingsBtn'),
       hangupBtn: $('hangupBtn'),
       chatBadge: $('chatBadge'),
-      
-      // More Menu
-      moreMenu: $('moreMenu'),
-      flipCameraCallBtn: $('flipCameraCallBtn'),
-      pipCallBtn: $('pipCallBtn'),
-      fullscreenCallBtn: $('fullscreenCallBtn'),
-      statsBtn: $('statsBtn'),
-      
-      // Header Actions
-      pipBtn: $('pipBtn'),
-      fullscreenBtn: $('fullscreenBtn'),
-      settingsBtn: $('settingsBtn'),
-      themeBtn: $('themeBtn'),
       
       // Chat
       chatPanel: $('chatPanel'),
@@ -171,1446 +275,1460 @@
       closeChatBtn: $('closeChatBtn'),
       typingIndicator: $('typingIndicator'),
       
-      // Settings Modal
+      // Modals
+      historyModal: $('historyModal'),
+      historyList: $('historyList'),
+      historyBtn: $('historyBtn'),
+      closeHistoryBtn: $('closeHistoryBtn'),
+      clearHistoryBtn: $('clearHistoryBtn'),
+      
       settingsModal: $('settingsModal'),
       closeSettingsBtn: $('closeSettingsBtn'),
       cameraSelect: $('cameraSelect'),
       micSelect: $('micSelect'),
       speakerSelect: $('speakerSelect'),
-      volumeSlider: $('volumeSlider'),
+      qualitySelect: $('videoQualitySelect'),
       
-      // Stats Modal
-      statsModal: $('statsModal'),
-      closeStatsBtn: $('closeStatsBtn'),
-      statResolution: $('statResolution'),
-      statFrameRate: $('statFrameRate'),
-      statBitrate: $('statBitrate'),
-      statPacketLoss: $('statPacketLoss'),
-      statLatency: $('statLatency'),
-      statConnection: $('statConnection'),
-      
-      // Remote Audio
-      remoteAudio: $('remoteAudio'),
-      
-      // Toast
-      toastContainer: $('toastContainer')
+      // Theme
+      themeBtn: $('themeBtn')
     };
-  }
+  };
 
   // ============================================
-  // UTILITY FUNCTIONS
+  // UI UPDATES
   // ============================================
-  function log(message, type = 'info') {
-    const icons = { info: 'ℹ️', success: '✅', error: '❌', warn: '⚠️' };
-    console.log(`${icons[type] || 'ℹ️'} [HeartSpace] ${message}`);
-  }
-
-  function showToast(message, type = 'info', duration = 4000) {
-    const container = App.elements.toastContainer;
-    if (!container) return;
-    
-    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${escapeHTML(message)}</span>`;
-    
-    container.appendChild(toast);
-    
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateX(100%)';
-      setTimeout(() => toast.remove(), 300);
-    }, duration);
-  }
-
-  function setConnectionStatus(text, type = 'info') {
-    const el = App.elements;
-    if (el.connectionText) el.connectionText.textContent = text;
-    if (el.connectionBar) {
-      el.connectionBar.className = 'connection-bar';
-      if (type === 'connected') el.connectionBar.classList.add('connected');
-      if (type === 'error') el.connectionBar.classList.add('error');
+  const setConnStatus = (text, type = 'info') => {
+    if (App.el.connText) App.el.connText.textContent = text;
+    if (App.el.connectionBar) {
+      App.el.connectionBar.className = 'connection-bar';
+      if (type === 'connected') App.el.connectionBar.classList.add('connected');
+      if (type === 'error') App.el.connectionBar.classList.add('error');
     }
-  }
+  };
 
-  function showScreen(name) {
-    const el = App.elements;
-    el.preCallScreen?.classList.toggle('hidden', name !== 'precall');
-    el.waitingScreen?.classList.toggle('hidden', name !== 'waiting');
-    el.inCallScreen?.classList.toggle('hidden', name !== 'incall');
+  const showScreen = name => {
+    App.el.preCall?.classList.add('hidden');
+    App.el.waiting?.classList.add('hidden');
+    App.el.inCall?.classList.add('hidden');
     
-    // Show/hide header buttons based on screen
-    if ($('pipBtn')) $('pipBtn').classList.toggle('hidden', name !== 'incall');
-    if ($('fullscreenBtn')) $('fullscreenBtn').classList.toggle('hidden', name !== 'incall');
-  }
+    if (name === 'precall') App.el.preCall?.classList.remove('hidden');
+    if (name === 'waiting') App.el.waiting?.classList.remove('hidden');
+    if (name === 'incall') App.el.inCall?.classList.remove('hidden');
+  };
 
-  function setButtonLoading(button, isLoading) {
-    if (!button) return;
-    button.classList.toggle('loading', isLoading);
-    button.disabled = isLoading;
-  }
+  const setLoading = (btn, loading) => {
+    if (!btn) return;
+    btn.classList.toggle('loading', loading);
+    btn.disabled = loading;
+  };
 
-  function enableMainButtons(enabled) {
-    const el = App.elements;
-    if (el.createBtn) el.createBtn.disabled = !enabled;
-    if (el.joinBtn) el.joinBtn.disabled = !enabled;
-  }
+  const enableButtons = enabled => {
+    if (App.el.createBtn) App.el.createBtn.disabled = !enabled;
+    if (App.el.joinBtn) App.el.joinBtn.disabled = !enabled;
+  };
 
-  function formatDuration(seconds) {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hrs > 0) {
-      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const updateNetQuality = quality => {
+    const el = App.el.netQuality;
+    if (!el) return;
+    el.className = `network-badge ${quality}`;
+    const text = el.querySelector('.quality-text');
+    if (text) text.textContent = quality.charAt(0).toUpperCase() + quality.slice(1);
+  };
+
+  const updateChatBadge = () => {
+    const badge = App.el.chatBadge;
+    if (!badge) return;
+    if (App.unreadMsgs > 0) {
+      badge.textContent = App.unreadMsgs > 9 ? '9+' : App.unreadMsgs;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
     }
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  function generateRoomId() {
-    const adjectives = ['happy', 'sunny', 'cozy', 'sweet', 'calm', 'warm', 'bright', 'cool'];
-    const nouns = ['star', 'moon', 'cloud', 'wave', 'tree', 'bird', 'lake', 'hill'];
-    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const noun = nouns[Math.floor(Math.random() * nouns.length)];
-    const num = Math.floor(Math.random() * 1000);
-    return `${adj}-${noun}-${num}`;
-  }
-
-  function getShareLink(roomId) {
-    return `${window.location.origin}?room=${encodeURIComponent(roomId)}`;
-  }
-
-  function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('Copied to clipboard!', 'success');
-    }).catch(() => {
-      showToast('Failed to copy', 'error');
-    });
-  }
-
-  function escapeHTML(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
+  };
 
   // ============================================
-  // SOUND EFFECTS
+  // SOUNDS
   // ============================================
-  function playSound(type) {
+  const playTone = type => {
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioContext();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      
       osc.connect(gain);
       gain.connect(ctx.destination);
       gain.gain.value = 0.1;
       
+      const play = (freq, start, end) => {
+        setTimeout(() => { osc.frequency.value = freq; }, start);
+        if (end) setTimeout(() => { osc.stop(); ctx.close(); }, end);
+      };
+      
+      osc.start();
+      
       switch (type) {
-        case 'ring':
-          osc.frequency.value = 440;
-          osc.start();
-          setTimeout(() => osc.frequency.value = 550, 150);
-          setTimeout(() => { osc.stop(); ctx.close(); }, 300);
-          break;
-        case 'connect':
-          osc.frequency.value = 523;
-          osc.start();
-          setTimeout(() => osc.frequency.value = 659, 100);
-          setTimeout(() => osc.frequency.value = 784, 200);
-          setTimeout(() => { osc.stop(); ctx.close(); }, 300);
-          break;
-        case 'hangup':
-          osc.frequency.value = 400;
-          osc.start();
-          setTimeout(() => osc.frequency.value = 300, 150);
-          setTimeout(() => { osc.stop(); ctx.close(); }, 300);
-          break;
-        case 'message':
-          osc.frequency.value = 800;
-          gain.gain.value = 0.05;
-          osc.start();
-          setTimeout(() => { osc.stop(); ctx.close(); }, 80);
-          break;
+        case 'ring': play(440, 0); play(550, 150); play(0, 0, 300); break;
+        case 'connect': play(523, 0); play(659, 100); play(784, 200); play(0, 0, 300); break;
+        case 'hangup': play(400, 0); play(300, 150); play(0, 0, 300); break;
+        case 'message': gain.gain.value = 0.05; play(800, 0); play(0, 0, 100); break;
       }
     } catch (e) {}
-  }
+  };
 
-  function startRingtone() {
-    stopRingtone();
-    playSound('ring');
-    App.ringtoneInterval = setInterval(() => playSound('ring'), 2000);
-  }
+  const startRing = () => {
+    stopRing();
+    playTone('ring');
+    App.ringInterval = setInterval(() => playTone('ring'), 2000);
+  };
 
-  function stopRingtone() {
-    if (App.ringtoneInterval) {
-      clearInterval(App.ringtoneInterval);
-      App.ringtoneInterval = null;
+  const stopRing = () => {
+    if (App.ringInterval) {
+      clearInterval(App.ringInterval);
+      App.ringInterval = null;
     }
-  }
+  };
 
   // ============================================
-  // CALL TIMER
+  // TIMER
   // ============================================
-  function startCallTimer() {
-    App.callStartTime = Date.now();
-    
+  const startTimer = () => {
+    App.callStart = Date.now();
     const update = () => {
-      if (!App.callStartTime) return;
-      const elapsed = Math.floor((Date.now() - App.callStartTime) / 1000);
-      if (App.elements.callTimer) {
-        App.elements.callTimer.textContent = formatDuration(elapsed);
-      }
+      if (!App.callStart) return;
+      const secs = Math.floor((Date.now() - App.callStart) / 1000);
+      if (App.el.timer) App.el.timer.textContent = formatTime(secs);
     };
-    
     update();
     App.timerInterval = setInterval(update, 1000);
-  }
+  };
 
-  function stopCallTimer() {
+  const stopTimer = () => {
     if (App.timerInterval) {
       clearInterval(App.timerInterval);
       App.timerInterval = null;
     }
-    const duration = App.callStartTime ? Math.floor((Date.now() - App.callStartTime) / 1000) : 0;
-    App.callStartTime = null;
+    const duration = App.callStart ? Math.floor((Date.now() - App.callStart) / 1000) : 0;
+    App.callStart = null;
     return duration;
-  }
+  };
 
   // ============================================
-  // MEDIA DEVICES
+  // HISTORY
   // ============================================
-  async function enumerateDevices() {
+  const saveHistory = (partner, duration, type) => {
+    try {
+      const history = JSON.parse(localStorage.getItem('liveCallHistory') || '[]');
+      history.unshift({ partner, duration, type, time: new Date().toISOString() });
+      if (history.length > 50) history.pop();
+      localStorage.setItem('liveCallHistory', JSON.stringify(history));
+    } catch (e) {}
+  };
+
+  const loadHistory = () => {
+    const list = App.el.historyList;
+    if (!list) return;
+    
+    try {
+      const history = JSON.parse(localStorage.getItem('liveCallHistory') || '[]');
+      
+      if (!history.length) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <span class="empty-icon">📹</span>
+            <p>No video calls yet</p>
+            <span class="empty-hint">Your call history will appear here</span>
+          </div>`;
+        return;
+      }
+      
+      list.innerHTML = history.map(c => {
+        const d = new Date(c.time);
+        const icon = c.type === 'outgoing' ? '📤' : '📥';
+        return `
+          <div class="history-item">
+            <span class="history-icon">${icon}</span>
+            <div class="history-info">
+              <div class="history-name">${escape(c.partner)}</div>
+              <div class="history-time">${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</div>
+            </div>
+            <div class="history-duration">${formatTime(c.duration || 0)}</div>
+          </div>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = '<div class="empty-state">Error loading</div>';
+    }
+  };
+
+  const clearHistory = () => {
+    localStorage.removeItem('liveCallHistory');
+    loadHistory();
+    toast('History cleared', 'success');
+  };
+
+  // ============================================
+  // QUALITY MONITORING
+  // ============================================
+  const startQosMonitor = () => {
+    stopQosMonitor();
+    
+    App.qosInterval = setInterval(async () => {
+      if (!App.pc || App.pc.connectionState !== 'connected') return;
+      
+      try {
+        const stats = await App.pc.getStats();
+        let lost = 0, received = 0, fps = 0, rtt = 0;
+        
+        stats.forEach(r => {
+          if (r.type === 'inbound-rtp') {
+            lost += r.packetsLost || 0;
+            received += r.packetsReceived || 0;
+            if (r.kind === 'video') fps = r.framesPerSecond || 0;
+          }
+          if (r.type === 'candidate-pair' && r.state === 'succeeded') {
+            rtt = r.currentRoundTripTime || 0;
+          }
+        });
+        
+        const total = lost + received;
+        if (!total) return;
+        
+        const lossRate = lost / total;
+        let quality = 'excellent';
+        
+        if (lossRate > 0.1 || fps < 10 || rtt > 0.5) quality = 'poor';
+        else if (lossRate > 0.05 || fps < 20 || rtt > 0.3) quality = 'fair';
+        else if (lossRate > 0.02 || fps < 25 || rtt > 0.15) quality = 'good';
+        
+        updateNetQuality(quality);
+      } catch (e) {}
+    }, 3000);
+  };
+
+  const stopQosMonitor = () => {
+    if (App.qosInterval) {
+      clearInterval(App.qosInterval);
+      App.qosInterval = null;
+    }
+  };
+
+  // ============================================
+  // DEVICE MANAGEMENT
+  // ============================================
+  const listDevices = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       
-      App.availableCameras = devices.filter(d => d.kind === 'videoinput');
-      const mics = devices.filter(d => d.kind === 'audioinput');
+      const videos = devices.filter(d => d.kind === 'videoinput');
+      const audios = devices.filter(d => d.kind === 'audioinput');
       const speakers = devices.filter(d => d.kind === 'audiooutput');
       
-      // Populate settings selects
-      populateDeviceSelect(App.elements.cameraSelect, App.availableCameras, 'Camera');
-      populateDeviceSelect(App.elements.micSelect, mics, 'Microphone');
-      populateDeviceSelect(App.elements.speakerSelect, speakers, 'Speaker');
-      
-      // Show flip camera button if multiple cameras
-      if (App.elements.flipCameraBtn) {
-        App.elements.flipCameraBtn.style.display = App.availableCameras.length > 1 ? '' : 'none';
+      if (App.el.cameraSelect) {
+        App.el.cameraSelect.innerHTML = videos.map((d, i) => 
+          `<option value="${d.deviceId}">${d.label || `Camera ${i+1}`}</option>`).join('');
       }
       
-      log(`Found ${App.availableCameras.length} cameras, ${mics.length} mics`, 'info');
+      if (App.el.micSelect) {
+        App.el.micSelect.innerHTML = audios.map((d, i) => 
+          `<option value="${d.deviceId}">${d.label || `Mic ${i+1}`}</option>`).join('');
+      }
       
+      if (App.el.speakerSelect) {
+        App.el.speakerSelect.innerHTML = speakers.map((d, i) => 
+          `<option value="${d.deviceId}">${d.label || `Speaker ${i+1}`}</option>`).join('');
+      }
     } catch (e) {
-      log(`Enumerate devices error: ${e.message}`, 'error');
+      log('Device list error: ' + e.message, 'error');
     }
-  }
+  };
 
-  function populateDeviceSelect(select, devices, defaultLabel) {
-    if (!select) return;
-    
-    select.innerHTML = '';
-    
-    if (devices.length === 0) {
-      const option = document.createElement('option');
-      option.textContent = `No ${defaultLabel} found`;
-      select.appendChild(option);
-      return;
-    }
-    
-    devices.forEach((device, index) => {
-      const option = document.createElement('option');
-      option.value = device.deviceId;
-      option.textContent = device.label || `${defaultLabel} ${index + 1}`;
-      select.appendChild(option);
-    });
-  }
-
-  async function getMediaStream(videoEnabled = true, audioEnabled = true) {
-    const quality = CONFIG.videoQuality[App.selectedQuality] || CONFIG.videoQuality.hd;
-    
-    const constraints = {
-      video: videoEnabled ? {
-        width: { ideal: quality.width },
-        height: { ideal: quality.height },
-        frameRate: { ideal: quality.frameRate },
-        facingMode: 'user'
-      } : false,
-      audio: audioEnabled ? CONFIG.audioConstraints : false
-    };
-    
-    // Use specific camera if selected
-    if (videoEnabled && App.availableCameras.length > 0) {
-      const cameraId = App.availableCameras[App.currentCameraIndex]?.deviceId;
-      if (cameraId) {
-        constraints.video.deviceId = { exact: cameraId };
-      }
-    }
+  // ============================================
+  // MEDIA STREAMS
+  // ============================================
+  const getMedia = async (video = true) => {
+    log('Getting media...', 'info');
     
     try {
-      return await navigator.mediaDevices.getUserMedia(constraints);
+      App.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: CONFIG.audio,
+        video: video ? CONFIG.video : false
+      });
+      
+      // Display locally
+      if (App.el.localVideo) {
+        App.el.localVideo.srcObject = App.localStream;
+        App.el.localVideo.muted = true;
+      }
+      
+      if (App.el.waitingPreview) {
+        App.el.waitingPreview.srcObject = App.localStream;
+        App.el.waitingPreview.muted = true;
+      }
+      
+      // Add to peer connection
+      if (App.pc) {
+        App.localStream.getTracks().forEach(track => {
+          App.pc.addTrack(track, App.localStream);
+        });
+      }
+      
+      if (App.el.localContainer) {
+        App.el.localContainer.classList.add('active');
+      }
+      
+      log('Media ready', 'success');
+      await listDevices();
+      
     } catch (e) {
-      log(`Media error: ${e.message}`, 'error');
+      log('Media error: ' + e.message, 'error');
+      
+      if (e.name === 'NotAllowedError') {
+        toast('Please allow camera/mic access', 'error');
+      } else if (e.name === 'NotFoundError') {
+        toast('Camera/mic not found', 'error');
+      } else {
+        toast('Cannot access media devices', 'error');
+      }
       throw e;
     }
-  }
+  };
 
-  // ============================================
-  // PREVIEW
-  // ============================================
-  async function startPreview() {
-    try {
-      await enumerateDevices();
-      
-      App.localStream = await getMediaStream(App.isVideoEnabled, App.isAudioEnabled);
-      
-      if (App.elements.previewVideo) {
-        App.elements.previewVideo.srcObject = App.localStream;
-      }
-      
-      updatePreviewPlaceholder();
-      updatePreviewButtons();
-      
-      log('Preview started', 'success');
-      
-    } catch (e) {
-      log(`Preview error: ${e.message}`, 'error');
-      showToast('Cannot access camera/microphone', 'error');
-    }
-  }
-
-  function updatePreviewPlaceholder() {
-    const placeholder = App.elements.previewPlaceholder;
-    if (!placeholder) return;
-    
-    placeholder.classList.toggle('hidden', App.isVideoEnabled && App.localStream);
-  }
-
-  function updatePreviewButtons() {
-    const el = App.elements;
-    
-    if (el.previewCameraBtn) {
-      el.previewCameraBtn.classList.toggle('active', App.isVideoEnabled);
-      el.previewCameraBtn.textContent = App.isVideoEnabled ? '📹' : '📷';
-    }
-    
-    if (el.previewMicBtn) {
-      el.previewMicBtn.classList.toggle('active', App.isAudioEnabled);
-      el.previewMicBtn.textContent = App.isAudioEnabled ? '🎤' : '🔇';
-    }
-  }
-
-  async function togglePreviewCamera() {
-    App.isVideoEnabled = !App.isVideoEnabled;
-    
+  const stopMedia = () => {
     if (App.localStream) {
-      App.localStream.getVideoTracks().forEach(track => {
-        track.enabled = App.isVideoEnabled;
-      });
+      App.localStream.getTracks().forEach(t => t.stop());
+      App.localStream = null;
     }
-    
-    updatePreviewPlaceholder();
-    updatePreviewButtons();
-    
-    showToast(App.isVideoEnabled ? 'Camera on' : 'Camera off', 'info');
-  }
-
-  function togglePreviewMic() {
-    App.isAudioEnabled = !App.isAudioEnabled;
-    
-    if (App.localStream) {
-      App.localStream.getAudioTracks().forEach(track => {
-        track.enabled = App.isAudioEnabled;
-      });
-    }
-    
-    updatePreviewButtons();
-    showToast(App.isAudioEnabled ? 'Microphone on' : 'Microphone off', 'info');
-  }
-
-  async function flipCamera() {
-    if (App.availableCameras.length <= 1) {
-      showToast('Only one camera available', 'warning');
-      return;
-    }
-    
-    App.currentCameraIndex = (App.currentCameraIndex + 1) % App.availableCameras.length;
-    
-    try {
-      // Stop current video tracks
-      if (App.localStream) {
-        App.localStream.getVideoTracks().forEach(track => track.stop());
-      }
-      
-      // Get new stream with different camera
-      const newStream = await getMediaStream(true, App.isAudioEnabled);
-      
-      // Replace video track
-      const newVideoTrack = newStream.getVideoTracks()[0];
-      
-      if (App.localStream) {
-        // Remove old video tracks
-        App.localStream.getVideoTracks().forEach(track => {
-          App.localStream.removeTrack(track);
-        });
-        // Add new video track
-        App.localStream.addTrack(newVideoTrack);
-      }
-      
-      // Update preview video
-      if (App.elements.previewVideo) {
-        App.elements.previewVideo.srcObject = App.localStream;
-      }
-      
-      // Update local video in call
-      if (App.elements.localVideo) {
-        App.elements.localVideo.srcObject = App.localStream;
-      }
-      
-      // Replace track in peer connection
-      if (App.peerConnection) {
-        const senders = App.peerConnection.getSenders();
-        const videoSender = senders.find(s => s.track?.kind === 'video');
-        if (videoSender) {
-          await videoSender.replaceTrack(newVideoTrack);
-        }
-      }
-      
-      showToast('Camera switched', 'success');
-      
-    } catch (e) {
-      log(`Flip camera error: ${e.message}`, 'error');
-      showToast('Failed to switch camera', 'error');
-    }
-  }
+    if (App.el.localVideo) App.el.localVideo.srcObject = null;
+    if (App.el.waitingPreview) App.el.waitingPreview.srcObject = null;
+  };
 
   // ============================================
-  // WEBRTC
+  // WEBRTC PEER CONNECTION
   // ============================================
-  async function createPeerConnection() {
+  const createPeerConnection = async () => {
     log('Creating peer connection...', 'info');
     
-    App.peerConnection = new RTCPeerConnection({
-      iceServers: CONFIG.iceServers
+    // Reset
+    App.iceQueue = [];
+    App.iceReady = false;
+    
+    if (App.pc) {
+      App.pc.close();
+      App.pc = null;
+    }
+    
+    // Create new connection
+    App.pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS,
+      ...CONFIG.connection
     });
     
     App.remoteStream = new MediaStream();
-    
-    if (App.elements.remoteVideo) {
-      App.elements.remoteVideo.srcObject = App.remoteStream;
-    }
-    if (App.elements.remoteAudio) {
-      App.elements.remoteAudio.srcObject = App.remoteStream;
+    if (App.el.remoteVideo) {
+      App.el.remoteVideo.srcObject = App.remoteStream;
     }
     
-    // ICE candidates
-    App.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        App.socket.emit('ice-candidate', event.candidate);
+    // ICE candidate
+    App.pc.onicecandidate = e => {
+      if (e.candidate) {
+        log(`ICE: ${e.candidate.type || 'unknown'} ${e.candidate.protocol || ''}`, 'info');
+        App.socket.emit('ice-candidate', { candidate: e.candidate });
+      }
+    };
+    
+    // ICE gathering state
+    App.pc.onicegatheringstatechange = () => {
+      log(`ICE gathering: ${App.pc?.iceGatheringState}`, 'info');
+    };
+    
+    // ICE connection state
+    App.pc.oniceconnectionstatechange = () => {
+      const state = App.pc?.iceConnectionState;
+      log(`ICE connection: ${state}`, 'info');
+      
+      switch (state) {
+        case 'connected':
+        case 'completed':
+          onConnected();
+          break;
+        case 'disconnected':
+          onDisconnected();
+          break;
+        case 'failed':
+          onFailed();
+          break;
       }
     };
     
     // Connection state
-    App.peerConnection.onconnectionstatechange = () => {
-      const state = App.peerConnection.connectionState;
-      log(`Connection state: ${state}`, 'info');
+    App.pc.onconnectionstatechange = () => {
+      log(`Connection: ${App.pc?.connectionState}`, 'info');
+    };
+    
+    // Remote track
+    App.pc.ontrack = e => {
+      log(`Remote track: ${e.track.kind}`, 'success');
+      e.streams[0].getTracks().forEach(t => App.remoteStream.addTrack(t));
       
-      switch (state) {
-        case 'connected':
-          onCallConnected();
-          break;
-        case 'disconnected':
-          onCallDisconnected();
-          break;
-        case 'failed':
-          onCallFailed();
-          break;
+      if (App.el.remoteVideo) {
+        App.el.remoteVideo.srcObject = App.remoteStream;
+      }
+      if (App.el.remoteContainer) {
+        App.el.remoteContainer.classList.add('active');
       }
     };
     
-    // Incoming tracks
-    App.peerConnection.ontrack = (event) => {
-      log(`Track received: ${event.track.kind}`, 'success');
-      event.streams[0].getTracks().forEach(track => {
-        App.remoteStream.addTrack(track);
-      });
-      
-      // Hide remote video off overlay when video track is active
-      if (event.track.kind === 'video') {
-        App.elements.remoteVideoOff?.classList.add('hidden');
+    // Renegotiation
+    App.pc.onnegotiationneeded = async () => {
+      log('Negotiation needed', 'info');
+      if (App.role === 'creator' && App.pc?.signalingState === 'stable') {
+        try {
+          await sendOffer();
+        } catch (e) {
+          log('Renegotiation error: ' + e.message, 'error');
+        }
       }
     };
     
     log('Peer connection created', 'success');
-  }
+  };
 
-  async function addLocalTracks() {
-    if (!App.localStream || !App.peerConnection) return;
+  // ============================================
+  // SIGNALING
+  // ============================================
+  const sendOffer = async () => {
+    log('Creating offer...', 'info');
     
-    App.localStream.getTracks().forEach(track => {
-      App.peerConnection.addTrack(track, App.localStream);
-    });
-    
-    // Update local video display
-    if (App.elements.localVideo) {
-      App.elements.localVideo.srcObject = App.localStream;
-    }
-  }
-
-  async function createOffer() {
     try {
-      const offer = await App.peerConnection.createOffer({
+      const offer = await App.pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       });
-      await App.peerConnection.setLocalDescription(offer);
-      App.socket.emit('offer', offer);
+      
+      await App.pc.setLocalDescription(offer);
+      
+      App.socket.emit('offer', {
+        offer,
+        fromName: App.myName
+      });
+      
       log('Offer sent', 'success');
     } catch (e) {
-      log(`Offer error: ${e.message}`, 'error');
+      log('Offer error: ' + e.message, 'error');
       throw e;
     }
-  }
+  };
 
-  async function handleOffer(offer) {
+  const handleOffer = async data => {
+    log('Received offer...', 'info');
+    
     try {
-      if (!App.peerConnection) {
-        await createPeerConnection();
-        
-        // Get media if not already
-        if (!App.localStream) {
-          App.localStream = await getMediaStream(App.isVideoEnabled, App.isAudioEnabled);
-        }
-        
-        await addLocalTracks();
+      if (data.fromName) {
+        App.partnerName = data.fromName;
+        if (App.el.partnerName) App.el.partnerName.textContent = App.partnerName;
       }
       
-      await App.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      if (!App.pc) await createPeerConnection();
+      if (!App.localStream) await getMedia();
       
-      const answer = await App.peerConnection.createAnswer();
-      await App.peerConnection.setLocalDescription(answer);
+      await App.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      App.iceReady = true;
+      log('Remote description set', 'success');
       
-      App.socket.emit('answer', answer);
+      // Process queued ICE
+      await processIceQueue();
+      
+      // Create answer
+      const answer = await App.pc.createAnswer();
+      await App.pc.setLocalDescription(answer);
+      
+      App.socket.emit('answer', {
+        answer,
+        targetId: data.from,
+        fromName: App.myName
+      });
+      
       log('Answer sent', 'success');
-    } catch (e) {
-      log(`Handle offer error: ${e.message}`, 'error');
-    }
-  }
-
-  async function handleAnswer(answer) {
-    try {
-      await App.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      log('Answer processed', 'success');
-    } catch (e) {
-      log(`Handle answer error: ${e.message}`, 'error');
-    }
-  }
-
-  async function handleIceCandidate(data) {
-    try {
-      if (App.peerConnection && data.candidate) {
-        await App.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      
+      if (App.el.inCall?.classList.contains('hidden')) {
+        showScreen('incall');
+        if (App.el.statusText) App.el.statusText.textContent = 'Connecting...';
       }
+      
     } catch (e) {
-      log(`ICE error: ${e.message}`, 'error');
+      log('Handle offer error: ' + e.message, 'error');
+      toast('Connection failed', 'error');
     }
-  }
+  };
+
+  const handleAnswer = async data => {
+    log('Received answer...', 'info');
+    
+    try {
+      if (data.fromName) {
+        App.partnerName = data.fromName;
+        if (App.el.partnerName) App.el.partnerName.textContent = App.partnerName;
+      }
+      
+      await App.pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      App.iceReady = true;
+      log('Remote description set', 'success');
+      
+      await processIceQueue();
+      
+    } catch (e) {
+      log('Handle answer error: ' + e.message, 'error');
+    }
+  };
+
+  const handleIce = async data => {
+    try {
+      if (!data.candidate) return;
+      
+      if (!App.pc || !App.iceReady) {
+        log('Queueing ICE candidate', 'info');
+        App.iceQueue.push(data.candidate);
+        return;
+      }
+      
+      await App.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      log('ICE candidate added', 'success');
+      
+    } catch (e) {
+      log('ICE error: ' + e.message, 'error');
+    }
+  };
+
+  const processIceQueue = async () => {
+    if (!App.pc || !App.iceReady || !App.iceQueue.length) return;
+    
+    log(`Processing ${App.iceQueue.length} queued ICE candidates`, 'info');
+    
+    for (const candidate of App.iceQueue) {
+      try {
+        await App.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        log('Queued ICE error: ' + e.message, 'error');
+      }
+    }
+    
+    App.iceQueue = [];
+  };
 
   // ============================================
-  // CALL STATE
+  // CONNECTION STATE HANDLERS
   // ============================================
-  function onCallConnected() {
+  const onConnected = () => {
+    if (App.callStart) return; // Already connected
+    
     log('Call connected!', 'success');
     
-    playSound('connect');
-    stopRingtone();
+    playTone('connect');
+    stopRing();
     
-    setConnectionStatus('In Call', 'connected');
-    startCallTimer();
-    startStatsMonitoring();
+    setConnStatus('In Call', 'connected');
+    if (App.el.statusText) App.el.statusText.textContent = 'Connected';
+    
+    startTimer();
+    startQosMonitor();
     
     showScreen('incall');
-    updateControlButtons();
+    toast('Connected! 🎉', 'success');
     
-    // Update room name display
-    if (App.elements.callRoomName && App.currentRoom) {
-      App.elements.callRoomName.textContent = App.currentRoom;
-    }
-    
-    // Update partner name
-    if (App.elements.remoteVideoName) {
-      App.elements.remoteVideoName.textContent = App.partnerName;
-    }
-    
-    showToast('Connected! 🎉', 'success');
-  }
+    App.reconnectAttempts = 0;
+  };
 
-  function onCallDisconnected() {
-    log('Call disconnected', 'warn');
-    showToast('Connection lost. Reconnecting...', 'warning');
-  }
+  const onDisconnected = () => {
+    log('Disconnected, attempting reconnect...', 'warn');
+    if (App.el.statusText) App.el.statusText.textContent = 'Reconnecting...';
+    toast('Connection unstable...', 'warning');
+  };
 
-  function onCallFailed() {
-    log('Call failed', 'error');
-    showToast('Connection failed', 'error');
-    endCall();
-  }
+  const onFailed = async () => {
+    log('Connection failed', 'error');
+    
+    App.reconnectAttempts++;
+    
+    if (App.reconnectAttempts <= App.maxReconnectAttempts && App.role === 'creator') {
+      log(`ICE restart attempt ${App.reconnectAttempts}...`, 'warn');
+      toast('Reconnecting...', 'warning');
+      
+      try {
+        const offer = await App.pc.createOffer({ iceRestart: true });
+        await App.pc.setLocalDescription(offer);
+        App.socket.emit('offer', { offer });
+      } catch (e) {
+        log('ICE restart failed: ' + e.message, 'error');
+        endCall();
+      }
+    } else {
+      toast('Connection failed', 'error');
+      endCall();
+    }
+  };
 
   // ============================================
-  // CALL CONTROLS
+  // CALL MANAGEMENT
   // ============================================
-  function updateControlButtons() {
-    const el = App.elements;
-    
-    // Mic button
-    if (el.micBtn) {
-      el.micBtn.classList.toggle('active', App.isAudioEnabled);
-      const icon = el.micBtn.querySelector('.control-icon');
-      if (icon) icon.textContent = App.isAudioEnabled ? '🎤' : '🔇';
+  const previewCamera = async () => {
+    try {
+      setLoading(App.el.previewBtn, true);
+      await getMedia();
+      toast('Camera preview active', 'success');
+    } catch (e) {
+      toast('Camera access failed', 'error');
+    } finally {
+      setLoading(App.el.previewBtn, false);
     }
-    
-    // Camera button
-    if (el.cameraBtn) {
-      el.cameraBtn.classList.toggle('active', App.isVideoEnabled);
-      const icon = el.cameraBtn.querySelector('.control-icon');
-      if (icon) icon.textContent = App.isVideoEnabled ? '📹' : '📷';
-    }
-    
-    // Screen share button
-    if (el.screenShareBtn) {
-      el.screenShareBtn.classList.toggle('active', App.isScreenSharing);
-    }
-    
-    // Local video off overlay
-    if (el.localVideoOff) {
-      el.localVideoOff.classList.toggle('hidden', App.isVideoEnabled);
-    }
-  }
+  };
 
-  function toggleMic() {
-    App.isAudioEnabled = !App.isAudioEnabled;
+  const createRoom = async () => {
+    const roomId = App.el.roomId?.value.trim();
+    const userName = App.el.userName?.value.trim() || 'Anonymous';
     
-    if (App.localStream) {
-      App.localStream.getAudioTracks().forEach(track => {
-        track.enabled = App.isAudioEnabled;
-      });
-    }
-    
-    // Notify partner
-    App.socket.emit('media-state', {
-      video: App.isVideoEnabled,
-      audio: App.isAudioEnabled,
-      screenShare: App.isScreenSharing
-    });
-    
-    updateControlButtons();
-    showToast(App.isAudioEnabled ? 'Microphone on' : 'Microphone muted', 'info');
-  }
-
-  function toggleCamera() {
-    App.isVideoEnabled = !App.isVideoEnabled;
-    
-    if (App.localStream) {
-      App.localStream.getVideoTracks().forEach(track => {
-        track.enabled = App.isVideoEnabled;
-      });
-    }
-    
-    // Notify partner
-    App.socket.emit('media-state', {
-      video: App.isVideoEnabled,
-      audio: App.isAudioEnabled,
-      screenShare: App.isScreenSharing
-    });
-    
-    updateControlButtons();
-    showToast(App.isVideoEnabled ? 'Camera on' : 'Camera off', 'info');
-  }
-
-  async function toggleScreenShare() {
-    if (App.isScreenSharing) {
-      stopScreenShare();
+    if (!roomId) {
+      toast('Enter a Room ID', 'warning');
+      App.el.roomId?.focus();
       return;
     }
     
-    try {
-      App.screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: 'always' },
-        audio: true
-      });
-      
-      const screenTrack = App.screenStream.getVideoTracks()[0];
-      
-      // Replace video track in peer connection
-      if (App.peerConnection) {
-        const senders = App.peerConnection.getSenders();
-        const videoSender = senders.find(s => s.track?.kind === 'video');
-        if (videoSender) {
-          await videoSender.replaceTrack(screenTrack);
-        }
-      }
-      
-      // Update local video display
-      if (App.elements.localVideo) {
-        App.elements.localVideo.srcObject = App.screenStream;
-      }
-      
-      // Handle screen share stop
-      screenTrack.onended = () => {
-        stopScreenShare();
-      };
-      
-      App.isScreenSharing = true;
-      
-      // Notify partner
-      App.socket.emit('media-state', {
-        video: App.isVideoEnabled,
-        audio: App.isAudioEnabled,
-        screenShare: true
-      });
-      
-      updateControlButtons();
-      showToast('Screen sharing started', 'success');
-      
-    } catch (e) {
-      log(`Screen share error: ${e.message}`, 'error');
-      if (e.name !== 'NotAllowedError') {
-        showToast('Failed to share screen', 'error');
-      }
+    if (roomId.length < 3) {
+      toast('Room ID too short (min 3 chars)', 'warning');
+      return;
     }
-  }
-
-  async function stopScreenShare() {
-    if (!App.isScreenSharing) return;
     
-    // Stop screen stream
+    App.myName = userName;
+    localStorage.setItem('userName', userName);
+    App.socket.emit('set-name', userName);
+    
+    setLoading(App.el.createBtn, true);
+    App.socket.emit('create-room', roomId);
+  };
+
+  const joinRoom = async () => {
+    const roomId = App.el.roomId?.value.trim();
+    const userName = App.el.userName?.value.trim() || 'Anonymous';
+    
+    if (!roomId) {
+      toast('Enter a Room ID', 'warning');
+      App.el.roomId?.focus();
+      return;
+    }
+    
+    App.myName = userName;
+    localStorage.setItem('userName', userName);
+    App.socket.emit('set-name', userName);
+    
+    setLoading(App.el.joinBtn, true);
+    App.socket.emit('join-room', roomId);
+  };
+
+  const onRoomCreated = async data => {
+    log('Room created', 'success');
+    
+    const roomId = typeof data === 'string' ? data : (data.roomId || data);
+    const link = typeof data === 'object' && data.shareLink ? data.shareLink : shareLink(roomId);
+    
+    App.room = roomId;
+    App.role = 'creator';
+    
+    if (App.el.waitingRoomId) App.el.waitingRoomId.textContent = roomId;
+    if (App.el.waitingShareLink) App.el.waitingShareLink.value = link;
+    if (App.el.shareLink) App.el.shareLink.value = link;
+    if (App.el.shareLinkBox) App.el.shareLinkBox.classList.remove('hidden');
+    
+    try {
+      await createPeerConnection();
+      await getMedia();
+      await sendOffer();
+      
+      showScreen('waiting');
+      startRing();
+      
+      toast(`Room "${roomId}" created! Share the link`, 'success', 5000);
+    } catch (e) {
+      log('Create room error: ' + e.message, 'error');
+      toast('Failed to create room', 'error');
+      showScreen('precall');
+    }
+    
+    setLoading(App.el.createBtn, false);
+  };
+
+  const onRoomJoined = async data => {
+    log('Joined room', 'success');
+    
+    const roomId = typeof data === 'string' ? data : (data.roomId || data);
+    App.room = roomId;
+    App.role = 'joiner';
+    
+    if (data.creatorName) {
+      App.partnerName = data.creatorName;
+      if (App.el.partnerName) App.el.partnerName.textContent = App.partnerName;
+    }
+    
+    setLoading(App.el.joinBtn, false);
+    toast('Joined! Connecting...', 'success');
+    
+    try {
+      await createPeerConnection();
+      await getMedia();
+      log('Ready for offer', 'info');
+    } catch (e) {
+      log('Join setup error: ' + e.message, 'error');
+      toast('Failed to setup', 'error');
+      showScreen('precall');
+    }
+  };
+
+  const onPartnerJoined = data => {
+    log('Partner joined', 'success');
+    
+    App.partnerName = (typeof data === 'object' ? data.name : null) || 'Partner';
+    if (App.el.partnerName) App.el.partnerName.textContent = App.partnerName;
+    
+    stopRing();
+    toast(`${App.partnerName} joined!`, 'success');
+    
+    // Resend offer for joiner
+    if (App.role === 'creator') {
+      log('Sending new offer...', 'info');
+      sendOffer().catch(e => log('Offer error: ' + e.message, 'error'));
+    }
+  };
+
+  const endCall = () => {
+    log('Ending call...', 'info');
+    
+    stopRing();
+    const duration = stopTimer();
+    stopQosMonitor();
+    
+    playTone('hangup');
+    
+    // Save history
+    if (duration > 0) {
+      saveHistory(App.partnerName, duration, App.role === 'creator' ? 'outgoing' : 'incoming');
+    }
+    
+    // Stop screen share
     if (App.screenStream) {
-      App.screenStream.getTracks().forEach(track => track.stop());
+      App.screenStream.getTracks().forEach(t => t.stop());
       App.screenStream = null;
     }
     
-    // Restore camera video
-    const videoTrack = App.localStream?.getVideoTracks()[0];
+    // Close peer connection
+    if (App.pc) {
+      App.pc.close();
+      App.pc = null;
+    }
     
-    if (videoTrack && App.peerConnection) {
-      const senders = App.peerConnection.getSenders();
-      const videoSender = senders.find(s => s.track?.kind === 'video');
-      if (videoSender) {
-        await videoSender.replaceTrack(videoTrack);
+    // Stop media
+    stopMedia();
+    
+    // Reset state
+    App.remoteStream = null;
+    App.iceQueue = [];
+    App.iceReady = false;
+    App.room = null;
+    App.role = null;
+    App.partnerName = 'Partner';
+    App.muted = false;
+    App.videoOff = false;
+    App.screenSharing = false;
+    App.unreadMsgs = 0;
+    App.reconnectAttempts = 0;
+    
+    // Exit PiP/Fullscreen
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => {});
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+    
+    // Reset UI
+    if (App.el.remoteVideo) App.el.remoteVideo.srcObject = null;
+    if (App.el.chatPanel) App.el.chatPanel.classList.add('hidden');
+    if (App.el.chatMessages) App.el.chatMessages.innerHTML = '';
+    if (App.el.shareLinkBox) App.el.shareLinkBox.classList.add('hidden');
+    if (App.el.timer) App.el.timer.textContent = '00:00';
+    
+    resetControls();
+    showScreen('precall');
+    setConnStatus('Ready', 'connected');
+    enableButtons(true);
+    
+    toast('Call ended', 'info');
+  };
+
+  const resetControls = () => {
+    // Mute
+    if (App.el.muteBtn) {
+      App.el.muteBtn.classList.remove('active');
+    }
+    
+    // Video
+    if (App.el.videoBtn) {
+      App.el.videoBtn.classList.remove('active');
+    }
+    
+    // Screen
+    if (App.el.screenBtn) {
+      App.el.screenBtn.classList.remove('active');
+    }
+    
+    // Badge
+    updateChatBadge();
+  };
+
+  // ============================================
+  // CONTROLS
+  // ============================================
+  const toggleMute = () => {
+    if (!App.localStream) return;
+    
+    App.muted = !App.muted;
+    App.localStream.getAudioTracks().forEach(t => t.enabled = !App.muted);
+    
+    App.el.muteBtn?.classList.toggle('active', App.muted);
+    App.socket.emit('mute-status', App.muted);
+    toast(App.muted ? 'Muted' : 'Unmuted', 'info');
+  };
+
+  const toggleVideo = () => {
+    if (!App.localStream) return;
+    
+    App.videoOff = !App.videoOff;
+    App.localStream.getVideoTracks().forEach(t => t.enabled = !App.videoOff);
+    
+    App.el.videoBtn?.classList.toggle('active', App.videoOff);
+    App.el.localContainer?.classList.toggle('video-off', App.videoOff);
+    
+    App.socket.emit('video-status', App.videoOff);
+    toast(App.videoOff ? 'Camera off' : 'Camera on', 'info');
+  };
+
+  const flipCamera = async () => {
+    if (!App.localStream) return;
+    
+    App.frontCamera = !App.frontCamera;
+    
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { ...CONFIG.video, facingMode: App.frontCamera ? 'user' : 'environment' },
+        audio: false
+      });
+      
+      const newTrack = newStream.getVideoTracks()[0];
+      const oldTrack = App.localStream.getVideoTracks()[0];
+      
+      // Replace in peer connection
+      if (App.pc) {
+        const sender = App.pc.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) await sender.replaceTrack(newTrack);
+      }
+      
+      // Replace in stream
+      App.localStream.removeTrack(oldTrack);
+      App.localStream.addTrack(newTrack);
+      oldTrack.stop();
+      
+      if (App.el.localVideo) App.el.localVideo.srcObject = App.localStream;
+      
+      toast(App.frontCamera ? 'Front camera' : 'Back camera', 'info');
+    } catch (e) {
+      log('Flip camera error: ' + e.message, 'error');
+      toast('Could not switch camera', 'error');
+      App.frontCamera = !App.frontCamera;
+    }
+  };
+
+  const toggleScreen = async () => {
+    if (App.screenSharing) {
+      // Stop sharing
+      if (App.screenStream) {
+        App.screenStream.getTracks().forEach(t => t.stop());
+        App.screenStream = null;
+      }
+      
+      // Restore camera
+      if (App.localStream && App.pc) {
+        const camTrack = App.localStream.getVideoTracks()[0];
+        if (camTrack) {
+          const sender = App.pc.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) await sender.replaceTrack(camTrack);
+        }
+        if (App.el.localVideo) App.el.localVideo.srcObject = App.localStream;
+      }
+      
+      App.screenSharing = false;
+      App.el.screenBtn?.classList.remove('active');
+      App.socket.emit('screen-share-status', false);
+      toast('Screen share stopped', 'info');
+      
+    } else {
+      // Start sharing
+      try {
+        App.screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'always' },
+          audio: true
+        });
+        
+        const screenTrack = App.screenStream.getVideoTracks()[0];
+        
+        if (App.pc) {
+          const sender = App.pc.getSenders().find(s => s.track?.kind === 'video');
+          if (sender) await sender.replaceTrack(screenTrack);
+        }
+        
+        if (App.el.localVideo) App.el.localVideo.srcObject = App.screenStream;
+        
+        // Handle stop from browser UI
+        screenTrack.onended = () => toggleScreen();
+        
+        App.screenSharing = true;
+        App.el.screenBtn?.classList.add('active');
+        App.socket.emit('screen-share-status', true);
+        toast('Screen sharing', 'success');
+        
+      } catch (e) {
+        if (e.name !== 'AbortError') {
+          log('Screen share error: ' + e.message, 'error');
+          toast('Screen share failed', 'error');
+        }
       }
     }
-    
-    // Update local video display
-    if (App.elements.localVideo) {
-      App.elements.localVideo.srcObject = App.localStream;
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        App.fullscreen = false;
+      } else {
+        await App.el.inCall?.requestFullscreen();
+        App.fullscreen = true;
+      }
+      App.el.fullscreenBtn?.classList.toggle('active', App.fullscreen);
+    } catch (e) {
+      log('Fullscreen error: ' + e.message, 'error');
     }
-    
-    App.isScreenSharing = false;
-    
-    // Notify partner
-    App.socket.emit('media-state', {
-      video: App.isVideoEnabled,
-      audio: App.isAudioEnabled,
-      screenShare: false
-    });
-    
-    updateControlButtons();
-    showToast('Screen sharing stopped', 'info');
-  }
+  };
 
-  function swapVideos() {
-    App.isVideosSwapped = !App.isVideosSwapped;
-    App.elements.videoGrid?.classList.toggle('swapped', App.isVideosSwapped);
-  }
-
-  // ============================================
-  // PICTURE-IN-PICTURE & FULLSCREEN
-  // ============================================
-  async function togglePictureInPicture() {
-    const video = App.elements.remoteVideo;
-    if (!video) return;
-    
+  const togglePip = async () => {
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
-        showToast('Exited Picture-in-Picture', 'info');
-      } else if (document.pictureInPictureEnabled) {
-        await video.requestPictureInPicture();
-        showToast('Picture-in-Picture enabled', 'success');
-      } else {
-        showToast('Picture-in-Picture not supported', 'warning');
+        App.pip = false;
+      } else if (App.el.remoteVideo) {
+        await App.el.remoteVideo.requestPictureInPicture();
+        App.pip = true;
       }
+      App.el.pipBtn?.classList.toggle('active', App.pip);
     } catch (e) {
-      log(`PiP error: ${e.message}`, 'error');
+      log('PiP error: ' + e.message, 'error');
+      toast('PiP not supported', 'warning');
     }
-  }
+  };
 
-  function toggleFullscreen() {
-    const app = document.getElementById('app');
+  const toggleChat = () => {
+    App.chatOpen = !App.chatOpen;
+    App.el.chatPanel?.classList.toggle('hidden', !App.chatOpen);
     
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-      app?.classList.remove('fullscreen');
-      showToast('Exited fullscreen', 'info');
-    } else {
-      app?.requestFullscreen().catch(() => {});
-      app?.classList.add('fullscreen');
-      showToast('Fullscreen enabled', 'success');
+    if (App.chatOpen) {
+      App.unreadMsgs = 0;
+      updateChatBadge();
+      App.el.chatInput?.focus();
     }
-  }
+  };
 
-  // ============================================
-  // CONNECTION STATS
-  // ============================================
-  function startStatsMonitoring() {
-    stopStatsMonitoring();
-    
-    App.statsInterval = setInterval(async () => {
-      if (!App.peerConnection || App.peerConnection.connectionState !== 'connected') return;
-      
-      try {
-        const stats = await App.peerConnection.getStats();
-        let videoStats = null;
-        let audioStats = null;
-        
-        stats.forEach(report => {
-          if (report.type === 'inbound-rtp' && report.kind === 'video') {
-            videoStats = report;
-          }
-          if (report.type === 'inbound-rtp' && report.kind === 'audio') {
-            audioStats = report;
-          }
-        });
-        
-        updateConnectionQuality(videoStats, audioStats);
-        updateStatsModal(stats, videoStats, audioStats);
-        
-      } catch (e) {}
-    }, 2000);
-  }
-
-  function stopStatsMonitoring() {
-    if (App.statsInterval) {
-      clearInterval(App.statsInterval);
-      App.statsInterval = null;
-    }
-  }
-
-  function updateConnectionQuality(videoStats, audioStats) {
-    const el = App.elements.connectionQuality;
-    if (!el) return;
-    
-    let quality = 'excellent';
-    let packetsLost = 0;
-    let packetsReceived = 0;
-    
-    if (audioStats) {
-      packetsLost += audioStats.packetsLost || 0;
-      packetsReceived += audioStats.packetsReceived || 0;
-    }
-    if (videoStats) {
-      packetsLost += videoStats.packetsLost || 0;
-      packetsReceived += videoStats.packetsReceived || 0;
-    }
-    
-    const total = packetsLost + packetsReceived;
-    const lossRatio = total > 0 ? packetsLost / total : 0;
-    
-    if (lossRatio > 0.1) quality = 'poor';
-    else if (lossRatio > 0.05) quality = 'fair';
-    else if (lossRatio > 0.02) quality = 'good';
-    
-    el.className = `connection-quality ${quality}`;
-    const label = el.querySelector('.quality-label');
-    if (label) label.textContent = quality.charAt(0).toUpperCase() + quality.slice(1);
-  }
-
-  function updateStatsModal(stats, videoStats, audioStats) {
-    const el = App.elements;
-    
-    if (videoStats) {
-      // Resolution
-      if (el.statResolution) {
-        const width = videoStats.frameWidth || '-';
-        const height = videoStats.frameHeight || '-';
-        el.statResolution.textContent = `${width}x${height}`;
-      }
-      
-      // Frame rate
-      if (el.statFrameRate) {
-        el.statFrameRate.textContent = `${Math.round(videoStats.framesPerSecond || 0)} fps`;
-      }
-      
-      // Packet loss
-      if (el.statPacketLoss) {
-        const lost = videoStats.packetsLost || 0;
-        const received = videoStats.packetsReceived || 0;
-        const total = lost + received;
-        const percent = total > 0 ? ((lost / total) * 100).toFixed(1) : '0';
-        el.statPacketLoss.textContent = `${percent}%`;
-      }
-    }
-    
-    // Find candidate pair for latency
-    stats.forEach(report => {
-      if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-        if (el.statLatency && report.currentRoundTripTime) {
-          el.statLatency.textContent = `${Math.round(report.currentRoundTripTime * 1000)} ms`;
-        }
-        if (el.statBitrate && report.availableOutgoingBitrate) {
-          el.statBitrate.textContent = `${Math.round(report.availableOutgoingBitrate / 1000)} kbps`;
-        }
-      }
-    });
-    
-    // Connection state
-    if (el.statConnection && App.peerConnection) {
-      el.statConnection.textContent = App.peerConnection.connectionState;
-    }
-  }
+  const hangup = () => {
+    App.socket.emit('hang-up');
+    endCall();
+  };
 
   // ============================================
   // CHAT
   // ============================================
-  function addChatMessage(data) {
-    const container = App.elements.chatMessages;
+  const sendMessage = () => {
+    const input = App.el.chatInput;
+    const text = input?.value.trim();
+    
+    if (!text || !App.room) return;
+    
+    App.socket.emit('chat-message', { text });
+    input.value = '';
+    App.socket.emit('typing', false);
+  };
+
+  const addMessage = data => {
+    const container = App.el.chatMessages;
     if (!container) return;
     
-    const isMine = data.senderId === App.socket.id;
+    const mine = data.senderId === App.socket.id;
     const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     const div = document.createElement('div');
-    div.className = `chat-message ${isMine ? 'sent' : 'received'}`;
+    div.className = `chat-message ${mine ? 'sent' : 'received'}`;
     div.innerHTML = `
-      ${!isMine ? `<div class="chat-sender">${escapeHTML(data.sender)}</div>` : ''}
-      <div class="chat-bubble">${escapeHTML(data.text)}</div>
+      ${!mine ? `<div class="chat-sender">${escape(data.sender)}</div>` : ''}
+      <div class="chat-bubble">${escape(data.text)}</div>
       <div class="chat-time">${time}</div>
     `;
     
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
-  }
+  };
 
-  function sendMessage() {
-    const input = App.elements.chatInput;
-    if (!input) return;
-    
-    const text = input.value.trim();
-    if (!text || !App.currentRoom) return;
-    
-    App.socket.emit('chat-message', { text });
-    input.value = '';
-    App.socket.emit('typing', false);
-  }
-
-  function handleChatMessage(data) {
-    addChatMessage(data);
+  const handleMessage = data => {
+    addMessage(data);
     
     if (data.senderId !== App.socket.id) {
-      playSound('message');
+      playTone('message');
       
-      if (App.elements.chatPanel?.classList.contains('hidden')) {
-        App.unreadMessages++;
+      if (!App.chatOpen) {
+        App.unreadMsgs++;
         updateChatBadge();
       }
     }
-  }
-
-  function updateChatBadge() {
-    const badge = App.elements.chatBadge;
-    if (!badge) return;
-    
-    if (App.unreadMessages > 0) {
-      badge.textContent = App.unreadMessages > 9 ? '9+' : App.unreadMessages;
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
-  }
-
-  function toggleChat() {
-    const panel = App.elements.chatPanel;
-    if (!panel) return;
-    
-    panel.classList.toggle('hidden');
-    
-    if (!panel.classList.contains('hidden')) {
-      App.unreadMessages = 0;
-      updateChatBadge();
-      App.elements.chatInput?.focus();
-    }
-  }
-
-  function toggleMoreMenu() {
-    App.elements.moreMenu?.classList.toggle('hidden');
-  }
+  };
 
   // ============================================
-  // ROOM MANAGEMENT
+  // SETTINGS
   // ============================================
-  async function createRoom() {
-    const el = App.elements;
-    
-    const roomId = el.roomId?.value.trim();
-    const userName = el.userName?.value.trim() || 'Anonymous';
-    
-    if (!roomId) {
-      showToast('Please enter a Room ID', 'warning');
-      el.roomId?.focus();
-      return;
-    }
-    
-    App.myName = userName;
-    localStorage.setItem('userName', userName);
-    App.socket.emit('set-name', userName);
-    
-    // Get selected quality
-    App.selectedQuality = document.querySelector('input[name="quality"]:checked')?.value || 'hd';
-    
-    setButtonLoading(el.createBtn, true);
-    App.socket.emit('create-room', roomId);
-  }
+  const openSettings = () => {
+    App.el.settingsModal?.classList.remove('hidden');
+    listDevices();
+  };
 
-  async function joinRoom() {
-    const el = App.elements;
-    
-    const roomId = el.roomId?.value.trim();
-    const userName = el.userName?.value.trim() || 'Anonymous';
-    
-    if (!roomId) {
-      showToast('Please enter a Room ID', 'warning');
-      el.roomId?.focus();
-      return;
-    }
-    
-    App.myName = userName;
-    localStorage.setItem('userName', userName);
-    App.socket.emit('set-name', userName);
-    
-    // Get selected quality
-    App.selectedQuality = document.querySelector('input[name="quality"]:checked')?.value || 'hd';
-    
-    setButtonLoading(el.joinBtn, true);
-    App.socket.emit('join-room', roomId);
-  }
+  const closeSettings = () => {
+    App.el.settingsModal?.classList.add('hidden');
+  };
 
-  async function onRoomCreated(data) {
-    log('Room created', 'success');
-    
-    const roomId = typeof data === 'string' ? data : data.roomId;
-    const shareLink = typeof data === 'object' && data.shareLink ? data.shareLink : getShareLink(roomId);
-    
-    App.currentRoom = roomId;
-    App.currentRole = 'creator';
-    
-    // Update waiting screen
-    if (App.elements.waitingRoomId) App.elements.waitingRoomId.textContent = roomId;
-    if (App.elements.waitingShareLink) App.elements.waitingShareLink.value = shareLink;
+  const changeCamera = async deviceId => {
+    if (!App.localStream || !deviceId) return;
     
     try {
-      await createPeerConnection();
-      await addLocalTracks();
-      await createOffer();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false
+      });
       
-      showScreen('waiting');
-      startRingtone();
+      const newTrack = stream.getVideoTracks()[0];
+      const oldTrack = App.localStream.getVideoTracks()[0];
       
-      showToast(`Room "${roomId}" created! Share the link.`, 'success', 5000);
-    } catch (e) {
-      showToast('Failed to create room', 'error');
-      showScreen('precall');
-    }
-    
-    setButtonLoading(App.elements.createBtn, false);
-  }
-
-  async function onRoomJoined(data) {
-    log('Joined room', 'success');
-    
-    const roomId = typeof data === 'string' ? data : data.roomId;
-    const creatorName = typeof data === 'object' ? data.creatorName : null;
-    
-    App.currentRoom = roomId;
-    App.currentRole = 'joiner';
-    App.partnerName = creatorName || 'Partner';
-    
-    showToast('Joined! Connecting...', 'success');
-    setButtonLoading(App.elements.joinBtn, false);
-  }
-
-  function onPartnerJoined(data) {
-    log('Partner joined', 'success');
-    App.partnerName = data.name || 'Partner';
-    stopRingtone();
-    showToast(`${App.partnerName} joined!`, 'success');
-  }
-
-  function onPartnerMediaState(data) {
-    // Update remote video/audio indicators
-    if (App.elements.remoteVideoOff) {
-      App.elements.remoteVideoOff.classList.toggle('hidden', data.video);
-    }
-    
-    if (App.elements.remoteMicIndicator) {
-      App.elements.remoteMicIndicator.classList.toggle('muted', !data.audio);
-      App.elements.remoteMicIndicator.textContent = data.audio ? '🎤' : '🔇';
-    }
-    
-    if (App.elements.remoteVideoStatus) {
-      if (data.screenShare) {
-        App.elements.remoteVideoStatus.textContent = '(Screen sharing)';
-      } else {
-        App.elements.remoteVideoStatus.textContent = '';
+      if (App.pc) {
+        const sender = App.pc.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) await sender.replaceTrack(newTrack);
       }
+      
+      App.localStream.removeTrack(oldTrack);
+      App.localStream.addTrack(newTrack);
+      oldTrack.stop();
+      
+      if (App.el.localVideo) App.el.localVideo.srcObject = App.localStream;
+      toast('Camera changed', 'success');
+    } catch (e) {
+      toast('Failed to change camera', 'error');
     }
-  }
+  };
 
-  function endCall() {
-    log('Ending call...', 'info');
+  const changeMic = async deviceId => {
+    if (!App.localStream || !deviceId) return;
     
-    stopRingtone();
-    stopStatsMonitoring();
-    const duration = stopCallTimer();
-    
-    playSound('hangup');
-    
-    // Close peer connection
-    if (App.peerConnection) {
-      App.peerConnection.close();
-      App.peerConnection = null;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId } },
+        video: false
+      });
+      
+      const newTrack = stream.getAudioTracks()[0];
+      const oldTrack = App.localStream.getAudioTracks()[0];
+      
+      if (App.pc) {
+        const sender = App.pc.getSenders().find(s => s.track?.kind === 'audio');
+        if (sender) await sender.replaceTrack(newTrack);
+      }
+      
+      App.localStream.removeTrack(oldTrack);
+      App.localStream.addTrack(newTrack);
+      oldTrack.stop();
+      
+      newTrack.enabled = !App.muted;
+      toast('Microphone changed', 'success');
+    } catch (e) {
+      toast('Failed to change mic', 'error');
     }
+  };
+
+  const changeSpeaker = async deviceId => {
+    if (!App.el.remoteVideo || !deviceId) return;
     
-    // Stop screen share
-    if (App.screenStream) {
-      App.screenStream.getTracks().forEach(track => track.stop());
-      App.screenStream = null;
+    try {
+      if (App.el.remoteVideo.setSinkId) {
+        await App.el.remoteVideo.setSinkId(deviceId);
+        toast('Speaker changed', 'success');
+      } else {
+        toast('Not supported', 'warning');
+      }
+    } catch (e) {
+      toast('Failed to change speaker', 'error');
     }
+  };
+
+  // ============================================
+  // LOCAL VIDEO DRAG
+  // ============================================
+  const setupDrag = () => {
+    const el = App.el.localContainer;
+    if (!el) return;
     
-    // Keep local stream for preview
-    // App.localStream stays active
+    let dragging = false;
+    let startX, startY, startLeft, startTop;
     
-    // Reset state
-    App.currentRoom = null;
-    App.currentRole = null;
-    App.partnerName = 'Partner';
-    App.isScreenSharing = false;
-    App.unreadMessages = 0;
-    App.isVideosSwapped = false;
+    const onStart = e => {
+      if (e.target.tagName === 'BUTTON') return;
+      dragging = true;
+      el.style.transition = 'none';
+      
+      const rect = el.getBoundingClientRect();
+      startLeft = rect.left;
+      startTop = rect.top;
+      
+      if (e.type === 'touchstart') {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+      } else {
+        startX = e.clientX;
+        startY = e.clientY;
+      }
+      
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('mouseup', onEnd);
+      document.addEventListener('touchend', onEnd);
+    };
     
-    // Reset UI
-    App.elements.chatPanel?.classList.add('hidden');
-    App.elements.chatMessages && (App.elements.chatMessages.innerHTML = '');
-    App.elements.moreMenu?.classList.add('hidden');
-    App.elements.videoGrid?.classList.remove('swapped');
+    const onMove = e => {
+      if (!dragging) return;
+      e.preventDefault();
+      
+      let x, y;
+      if (e.type === 'touchmove') {
+        x = e.touches[0].clientX;
+        y = e.touches[0].clientY;
+      } else {
+        x = e.clientX;
+        y = e.clientY;
+      }
+      
+      const dx = x - startX;
+      const dy = y - startY;
+      
+      const newLeft = Math.max(0, Math.min(startLeft + dx, window.innerWidth - el.offsetWidth));
+      const newTop = Math.max(0, Math.min(startTop + dy, window.innerHeight - el.offsetHeight));
+      
+      el.style.position = 'fixed';
+      el.style.left = newLeft + 'px';
+      el.style.top = newTop + 'px';
+      el.style.right = 'auto';
+      el.style.bottom = 'auto';
+    };
     
-    if (App.elements.callTimer) App.elements.callTimer.textContent = '00:00';
+    const onEnd = () => {
+      dragging = false;
+      el.style.transition = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('mouseup', onEnd);
+      document.removeEventListener('touchend', onEnd);
+    };
     
-    updateChatBadge();
-    
-    // Back to preview
-    if (App.elements.previewVideo && App.localStream) {
-      App.elements.previewVideo.srcObject = App.localStream;
-    }
-    
-    showScreen('precall');
-    setConnectionStatus('Ready', 'connected');
-    enableMainButtons(true);
-    
-    showToast('Call ended', 'info');
-  }
+    el.addEventListener('mousedown', onStart);
+    el.addEventListener('touchstart', onStart, { passive: false });
+  };
 
   // ============================================
   // SOCKET EVENTS
   // ============================================
-  function setupSocketEvents() {
-    const socket = App.socket;
+  const setupSocket = () => {
+    const s = App.socket;
     
-    socket.on('connect', () => {
+    s.on('connect', () => {
       log('Connected to server', 'success');
-      setConnectionStatus('Ready to call', 'connected');
-      enableMainButtons(true);
+      setConnStatus('Ready', 'connected');
+      enableButtons(true);
       
-      // Set app type for server
-      socket.emit('set-app-type', 'video');
+      s.emit('set-app-type', 'video');
       
-      // Restore username
-      const savedName = localStorage.getItem('userName');
-      if (savedName) {
-        App.myName = savedName;
-        if (App.elements.userName) App.elements.userName.value = savedName;
-        socket.emit('set-name', savedName);
+      const name = localStorage.getItem('userName');
+      if (name) {
+        App.myName = name;
+        if (App.el.userName) App.el.userName.value = name;
+        s.emit('set-name', name);
       }
       
-      // Check URL for room
-      const params = new URLSearchParams(window.location.search);
-      const roomFromUrl = params.get('room');
-      if (roomFromUrl && App.elements.roomId) {
-        App.elements.roomId.value = roomFromUrl;
-        showToast('Room ID loaded from link', 'info');
+      // Auto-fill room from URL
+      const params = new URLSearchParams(location.search);
+      const room = params.get('room');
+      if (room && App.el.roomId) {
+        App.el.roomId.value = room;
+        toast('Room ID loaded', 'info');
       }
     });
     
-    socket.on('disconnect', () => {
+    s.on('disconnect', () => {
       log('Disconnected', 'error');
-      setConnectionStatus('Disconnected', 'error');
-      enableMainButtons(false);
+      setConnStatus('Disconnected', 'error');
+      enableButtons(false);
     });
     
-    socket.on('error', (data) => {
-      log(`Error: ${data.message}`, 'error');
-      showToast(data.message, 'error', 5000);
-      setButtonLoading(App.elements.createBtn, false);
-      setButtonLoading(App.elements.joinBtn, false);
-      stopRingtone();
+    s.on('reconnect', () => {
+      log('Reconnected', 'success');
+      setConnStatus('Reconnected', 'connected');
+      enableButtons(true);
+    });
+    
+    s.on('error', data => {
+      log('Server error: ' + data.message, 'error');
+      toast(data.message, 'error', 5000);
+      
+      setLoading(App.el.createBtn, false);
+      setLoading(App.el.joinBtn, false);
+      stopRing();
       showScreen('precall');
     });
     
-    socket.on('room-created', onRoomCreated);
-    socket.on('room-joined', onRoomJoined);
-    socket.on('user-joined', onPartnerJoined);
+    // Room events
+    s.on('room-created', onRoomCreated);
+    s.on('room-joined', onRoomJoined);
+    s.on('user-joined', onPartnerJoined);
     
-    socket.on('offer', handleOffer);
-    socket.on('answer', handleAnswer);
-    socket.on('ice-candidate', handleIceCandidate);
+    // Signaling
+    s.on('offer', handleOffer);
+    s.on('answer', handleAnswer);
+    s.on('ice-candidate', handleIce);
     
-    socket.on('partner-media-state', onPartnerMediaState);
-    socket.on('chat-message', handleChatMessage);
+    // Chat
+    s.on('chat-message', handleMessage);
     
-    socket.on('user-typing', (data) => {
-      const indicator = App.elements.typingIndicator;
-      if (indicator) {
-        indicator.classList.toggle('hidden', !data.isTyping);
-      }
+    s.on('user-typing', data => {
+      App.el.typingIndicator?.classList.toggle('hidden', !data.isTyping);
     });
     
-    socket.on('user-left', (data) => {
-      showToast(`${data.name || 'Partner'} left`, 'warning');
+    // Status
+    s.on('partner-muted', data => {
+      toast(data.isMuted ? '🔇 Partner muted' : '🔊 Partner unmuted', 'info');
+    });
+    
+    s.on('partner-video', data => {
+      toast(data.isOff ? '📷 Partner camera off' : '📹 Partner camera on', 'info');
+      App.el.remoteContainer?.classList.toggle('video-off', data.isOff);
+    });
+    
+    s.on('partner-screen-share', data => {
+      toast(data.isSharing ? '🖥️ Partner sharing screen' : '📹 Partner stopped sharing', 'info');
+    });
+    
+    // Call end
+    s.on('user-left', data => {
+      toast(`${data.name || 'Partner'} left`, 'warning');
       endCall();
     });
     
-    socket.on('call-ended', (data) => {
-      showToast(data.reason || 'Call ended', 'info');
+    s.on('call-ended', () => {
+      toast('Partner ended the call', 'info');
       endCall();
     });
-    
-    socket.on('room-expired', () => {
-      showToast('Room expired', 'warning');
-      endCall();
-    });
-  }
+  };
 
   // ============================================
-  // UI EVENT HANDLERS
+  // UI EVENTS
   // ============================================
-  function setupUIEvents() {
-    const el = App.elements;
-    
-    // Preview controls
-    el.previewCameraBtn?.addEventListener('click', togglePreviewCamera);
-    el.previewMicBtn?.addEventListener('click', togglePreviewMic);
-    el.flipCameraBtn?.addEventListener('click', flipCamera);
-    
-    // Room setup
-    el.generateBtn?.addEventListener('click', () => {
-      if (el.roomId) {
-        el.roomId.value = generateRoomId();
-        showToast('Room ID generated', 'success');
+  const setupUI = () => {
+    // Pre-call
+    App.el.generateBtn?.addEventListener('click', () => {
+      if (App.el.roomId) {
+        App.el.roomId.value = randomRoomId();
+        toast('Room ID generated', 'success');
       }
     });
     
-    el.copyRoomBtn?.addEventListener('click', () => {
-      if (el.roomId?.value) copyToClipboard(el.roomId.value);
+    App.el.copyRoomBtn?.addEventListener('click', () => {
+      if (App.el.roomId?.value) copyText(App.el.roomId.value);
     });
     
-    el.createBtn?.addEventListener('click', createRoom);
-    el.joinBtn?.addEventListener('click', joinRoom);
+    App.el.createBtn?.addEventListener('click', createRoom);
+    App.el.joinBtn?.addEventListener('click', joinRoom);
+    App.el.previewBtn?.addEventListener('click', previewCamera);
     
-    el.roomId?.addEventListener('keypress', (e) => {
+    App.el.roomId?.addEventListener('keypress', e => {
       if (e.key === 'Enter') createRoom();
     });
     
-    // Waiting screen
-    el.waitingCopyBtn?.addEventListener('click', () => {
-      if (el.waitingShareLink?.value) copyToClipboard(el.waitingShareLink.value);
-    });
-    
-    el.cancelWaitBtn?.addEventListener('click', () => {
+    // Waiting
+    App.el.cancelWaitBtn?.addEventListener('click', () => {
       App.socket.emit('hang-up');
       endCall();
     });
     
-    // Share buttons
-    el.shareWhatsApp?.addEventListener('click', () => {
-      const link = el.waitingShareLink?.value;
-      if (link) window.open(`https://wa.me/?text=${encodeURIComponent('Join my video call: ' + link)}`, '_blank');
+    App.el.waitingCopyBtn?.addEventListener('click', () => {
+      if (App.el.waitingShareLink?.value) copyText(App.el.waitingShareLink.value);
     });
     
-    el.shareTelegram?.addEventListener('click', () => {
-      const link = el.waitingShareLink?.value;
-      if (link) window.open(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent('Join my video call!')}`, '_blank');
+    App.el.copyLinkBtn?.addEventListener('click', () => {
+      if (App.el.shareLink?.value) copyText(App.el.shareLink.value);
     });
     
-    el.shareEmail?.addEventListener('click', () => {
-      const link = el.waitingShareLink?.value;
-      if (link) window.open(`mailto:?subject=${encodeURIComponent('Join my video call')}&body=${encodeURIComponent('Click here to join: ' + link)}`, '_blank');
-    });
-    
-    // Call controls
-    el.micBtn?.addEventListener('click', toggleMic);
-    el.cameraBtn?.addEventListener('click', toggleCamera);
-    el.screenShareBtn?.addEventListener('click', toggleScreenShare);
-    el.chatBtn?.addEventListener('click', toggleChat);
-    el.moreBtn?.addEventListener('click', toggleMoreMenu);
-    el.hangupBtn?.addEventListener('click', () => {
-      App.socket.emit('hang-up');
-      endCall();
-    });
-    
-    // More menu
-    el.flipCameraCallBtn?.addEventListener('click', () => {
-      flipCamera();
-      toggleMoreMenu();
-    });
-    
-    el.pipCallBtn?.addEventListener('click', () => {
-      togglePictureInPicture();
-      toggleMoreMenu();
-    });
-    
-    el.fullscreenCallBtn?.addEventListener('click', () => {
-      toggleFullscreen();
-      toggleMoreMenu();
-    });
-    
-    el.statsBtn?.addEventListener('click', () => {
-      el.statsModal?.classList.remove('hidden');
-      toggleMoreMenu();
-    });
-    
-    // Video controls
-    el.swapVideosBtn?.addEventListener('click', swapVideos);
-    
-    // Header buttons
-    el.pipBtn?.addEventListener('click', togglePictureInPicture);
-    el.fullscreenBtn?.addEventListener('click', toggleFullscreen);
-    
-    el.settingsBtn?.addEventListener('click', () => {
-      el.settingsModal?.classList.remove('hidden');
-    });
-    
-    el.themeBtn?.addEventListener('click', () => {
-      const html = document.documentElement;
-      const isDark = html.getAttribute('data-theme') === 'dark';
-      html.setAttribute('data-theme', isDark ? 'light' : 'dark');
-      localStorage.setItem('theme', isDark ? 'light' : 'dark');
-      el.themeBtn.textContent = isDark ? '🌙' : '☀️';
-    });
+    // Controls
+    App.el.muteBtn?.addEventListener('click', toggleMute);
+    App.el.videoBtn?.addEventListener('click', toggleVideo);
+    App.el.screenBtn?.addEventListener('click', toggleScreen);
+    App.el.flipBtn?.addEventListener('click', flipCamera);
+    App.el.chatBtn?.addEventListener('click', toggleChat);
+    App.el.fullscreenBtn?.addEventListener('click', toggleFullscreen);
+    App.el.pipBtn?.addEventListener('click', togglePip);
+    App.el.settingsBtn?.addEventListener('click', openSettings);
+    App.el.hangupBtn?.addEventListener('click', hangup);
     
     // Chat
-    el.closeChatBtn?.addEventListener('click', () => el.chatPanel?.classList.add('hidden'));
-    el.sendMsgBtn?.addEventListener('click', sendMessage);
-    el.chatInput?.addEventListener('keypress', (e) => {
+    App.el.closeChatBtn?.addEventListener('click', () => {
+      App.chatOpen = false;
+      App.el.chatPanel?.classList.add('hidden');
+    });
+    
+    App.el.sendMsgBtn?.addEventListener('click', sendMessage);
+    
+    App.el.chatInput?.addEventListener('keypress', e => {
       if (e.key === 'Enter') sendMessage();
     });
     
-    let typingTimeout;
-    el.chatInput?.addEventListener('input', () => {
+    let typingTimer;
+    App.el.chatInput?.addEventListener('input', () => {
       App.socket.emit('typing', true);
-      clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => App.socket.emit('typing', false), 1000);
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => App.socket.emit('typing', false), 1000);
     });
     
-    // Modals
-    el.closeSettingsBtn?.addEventListener('click', () => el.settingsModal?.classList.add('hidden'));
-    el.closeStatsBtn?.addEventListener('click', () => el.statsModal?.classList.add('hidden'));
+    // History
+    App.el.historyBtn?.addEventListener('click', () => {
+      loadHistory();
+      App.el.historyModal?.classList.remove('hidden');
+    });
     
-    // Close modals on backdrop click
-    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
-      backdrop.addEventListener('click', () => {
-        el.settingsModal?.classList.add('hidden');
-        el.statsModal?.classList.add('hidden');
+    App.el.closeHistoryBtn?.addEventListener('click', () => {
+      App.el.historyModal?.classList.add('hidden');
+    });
+    
+    App.el.clearHistoryBtn?.addEventListener('click', clearHistory);
+    
+    // Settings
+    App.el.closeSettingsBtn?.addEventListener('click', closeSettings);
+    
+    App.el.cameraSelect?.addEventListener('change', e => changeCamera(e.target.value));
+    App.el.micSelect?.addEventListener('change', e => changeMic(e.target.value));
+    App.el.speakerSelect?.addEventListener('change', e => changeSpeaker(e.target.value));
+    
+    // Modal overlays
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', () => {
+        App.el.historyModal?.classList.add('hidden');
+        App.el.settingsModal?.classList.add('hidden');
       });
     });
     
-    // Close more menu when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!el.moreBtn?.contains(e.target) && !el.moreMenu?.contains(e.target)) {
-        el.moreMenu?.classList.add('hidden');
+    // Theme
+    App.el.themeBtn?.addEventListener('click', () => {
+      const html = document.documentElement;
+      const dark = html.getAttribute('data-theme') === 'dark';
+      html.setAttribute('data-theme', dark ? 'light' : 'dark');
+      localStorage.setItem('theme', dark ? 'light' : 'dark');
+    });
+    
+    // Double-click remote video for fullscreen
+    App.el.remoteVideo?.addEventListener('dblclick', toggleFullscreen);
+    
+    // Fullscreen change
+    document.addEventListener('fullscreenchange', () => {
+      App.fullscreen = !!document.fullscreenElement;
+      App.el.fullscreenBtn?.classList.toggle('active', App.fullscreen);
+    });
+    
+    // PiP change
+    App.el.remoteVideo?.addEventListener('leavepictureinpicture', () => {
+      App.pip = false;
+      App.el.pipBtn?.classList.remove('active');
+    });
+    
+    // Before unload warning
+    window.addEventListener('beforeunload', e => {
+      if (App.room) {
+        e.preventDefault();
+        e.returnValue = 'Leave call?';
       }
     });
     
-    // Volume slider
-    el.volumeSlider?.addEventListener('input', () => {
-      if (el.remoteAudio) el.remoteAudio.volume = el.volumeSlider.value / 100;
-      if (el.remoteVideo) el.remoteVideo.volume = el.volumeSlider.value / 100;
-    });
-    
-    // Device selection
-    el.cameraSelect?.addEventListener('change', async () => {
-      const deviceId = el.cameraSelect.value;
-      const index = App.availableCameras.findIndex(c => c.deviceId === deviceId);
-      if (index >= 0) {
-        App.currentCameraIndex = index;
-        await flipCamera(); // Reuse flip camera logic
-      }
-    });
-  }
+    // Setup drag
+    setupDrag();
+  };
 
   // ============================================
-  // INITIALIZATION
+  // THEME
   // ============================================
-  function loadTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    if (App.elements.themeBtn) {
-      App.elements.themeBtn.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+  const loadTheme = () => {
+    const theme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+  };
+
+  // ============================================
+  // WEBRTC CHECK
+  // ============================================
+  const checkSupport = () => {
+    if (!navigator.mediaDevices || !window.RTCPeerConnection) {
+      setConnStatus('WebRTC not supported', 'error');
+      toast('Your browser does not support video calls', 'error');
+      enableButtons(false);
+      return false;
     }
-  }
+    return true;
+  };
 
-  async function init() {
-    log('Initializing HeartSpace Video v6.0...', 'info');
+  // ============================================
+  // INIT
+  // ============================================
+  const init = async () => {
+    log('HeartSpace Live v5.5 starting...', 'info');
     
-    // Cache DOM elements
-    cacheElements();
-    
-    // Load theme
+    cacheDOM();
     loadTheme();
     
-    // Check WebRTC support
-    if (!navigator.mediaDevices || !window.RTCPeerConnection) {
-      setConnectionStatus('WebRTC not supported', 'error');
-      showToast('Your browser does not support video calls', 'error');
-      enableMainButtons(false);
-      return;
-    }
+    if (!checkSupport()) return;
     
     // Connect socket
     App.socket = io();
     
-    // Setup events
-    setupSocketEvents();
-    setupUIEvents();
+    setupSocket();
+    setupUI();
     
     // Generate room ID
-    if (App.elements.roomId && !App.elements.roomId.value) {
-      App.elements.roomId.value = generateRoomId();
+    if (App.el.roomId && !App.el.roomId.value) {
+      App.el.roomId.value = randomRoomId();
     }
     
-    // Load saved username
-    const savedName = localStorage.getItem('userName');
-    if (savedName && App.elements.userName) {
-      App.elements.userName.value = savedName;
+    // Restore name
+    const name = localStorage.getItem('userName');
+    if (name && App.el.userName) {
+      App.el.userName.value = name;
     }
     
-    // Start camera preview
-    await startPreview();
+    // Service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
     
-    log('Initialization complete', 'success');
-  }
+    log('Ready!', 'success');
+  };
 
-  // Start when DOM is ready
+  // Start
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -1618,4 +1736,3 @@
   }
 
 })();
-

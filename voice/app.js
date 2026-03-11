@@ -1,1247 +1,1343 @@
 /**
- * HeartSpace Calls v5.0
- * Complete Rewrite - Clean & Bug-Free
+ * HeartSpace Voice v5.5
+ * Voice Calls with Voice Notes & Messaging
+ * 100% Free - Production Ready
  */
 
 (function() {
   'use strict';
 
   // ============================================
-  // CONFIGURATION
+  // ICE SERVERS (FREE)
+  // ============================================
+  const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:relay.metered.ca:80',
+      username: 'e8dd65b92c62d5e24328ff6e',
+      credential: 'kLsEr9bZT+I5VGcf'
+    },
+    {
+      urls: 'turn:relay.metered.ca:443',
+      username: 'e8dd65b92c62d5e24328ff6e',
+      credential: 'kLsEr9bZT+I5VGcf'
+    }
+  ];
+
+  // ============================================
+  // CONFIG
   // ============================================
   const CONFIG = {
-    iceServers: [
-      // STUN servers (free, works for ~70% of connections)
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      // TURN servers (free fallback for NAT/firewall - from OpenRelay Project)
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-    ],
-    audioConstraints: {
+    audio: {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
-      sampleRate: 44100
+      sampleRate: 48000
     }
   };
 
   // ============================================
-  // APPLICATION STATE
+  // STATE
   // ============================================
   const App = {
     socket: null,
-    peerConnection: null,
+    pc: null,
     localStream: null,
     remoteStream: null,
     
-    currentRoom: null,
-    currentRole: null, // 'creator' or 'joiner'
-    partnerName: 'Partner',
+    room: null,
+    role: null,
     myName: 'Anonymous',
+    partnerName: 'Partner',
     
-    isMuted: false,
-    callStartTime: null,
+    muted: false,
+    speakerOff: false,
+    
+    callStart: null,
     timerInterval: null,
-    ringtoneInterval: null,
+    ringInterval: null,
     qosInterval: null,
-    unreadMessages: 0,
     
-    // DOM Elements cache
-    elements: {}
+    iceQueue: [],
+    iceReady: false,
+    reconnectAttempts: 0,
+    
+    // Messages
+    msgPanelOpen: false,
+    unreadMsgs: 0,
+    
+    // Voice Recording
+    mediaRecorder: null,
+    audioChunks: [],
+    recordStart: null,
+    recordInterval: null,
+    
+    el: {}
   };
 
   // ============================================
-  // DOM HELPERS
+  // HELPERS
   // ============================================
-  function $(id) {
-    return document.getElementById(id);
-  }
+  const $ = id => document.getElementById(id);
+  
+  const log = (msg, type = 'info') => {
+    const icons = { info: 'ℹ️', success: '✅', error: '❌', warn: '⚠️' };
+    console.log(`${icons[type]} [HeartSpace Voice] ${msg}`);
+  };
 
-  function cacheElements() {
-    App.elements = {
+  const toast = (msg, type = 'info', duration = 4000) => {
+    const container = App.el.toastContainer;
+    if (!container) return;
+    
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    div.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
+    container.appendChild(div);
+    
+    setTimeout(() => {
+      div.style.opacity = '0';
+      div.style.transform = 'translateX(100%)';
+      setTimeout(() => div.remove(), 300);
+    }, duration);
+  };
+
+  const escape = str => {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  };
+
+  const formatTime = secs => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const randomRoom = () => {
+    const adj = ['happy', 'sunny', 'cozy', 'sweet', 'calm', 'warm', 'bright'];
+    const noun = ['heart', 'star', 'moon', 'cloud', 'dream', 'wave', 'sky'];
+    return `${adj[Math.floor(Math.random() * adj.length)]}-${noun[Math.floor(Math.random() * noun.length)]}-${Math.floor(Math.random() * 1000)}`;
+  };
+
+  const shareLink = room => `${location.origin}${location.pathname}?room=${encodeURIComponent(room)}`;
+
+  const copyText = text => {
+    navigator.clipboard.writeText(text)
+      .then(() => toast('Copied!', 'success'))
+      .catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        toast('Copied!', 'success');
+      });
+  };
+
+  // ============================================
+  // DOM CACHE
+  // ============================================
+  const cacheDOM = () => {
+    App.el = {
       // Connection
       connectionBar: $('connectionBar'),
-      connectionText: document.querySelector('.connection-text'),
+      connText: document.querySelector('.conn-text'),
+      toastContainer: $('toastContainer'),
       
       // Screens
-      preCallScreen: $('preCallScreen'),
-      waitingScreen: $('waitingScreen'),
-      inCallScreen: $('inCallScreen'),
+      preCall: $('preCallScreen'),
+      waiting: $('waitingScreen'),
+      inCall: $('inCallScreen'),
+      
+      // Audio
+      localAudio: $('localAudio'),
+      remoteAudio: $('remoteAudio'),
       
       // Inputs
       userName: $('userName'),
       roomId: $('roomId'),
-      roomStatus: $('roomStatus'),
       
-      // Buttons
+      // Pre-call buttons
       generateBtn: $('generateBtn'),
       copyRoomBtn: $('copyRoomBtn'),
       createBtn: $('createBtn'),
       joinBtn: $('joinBtn'),
-      cancelWaitBtn: $('cancelWaitBtn'),
-      muteBtn: $('muteBtn'),
-      speakerBtn: $('speakerBtn'),
-      chatBtn: $('chatBtn'),
-      hangupBtn: $('hangupBtn'),
       
-      // Waiting screen
+      // Waiting
       waitingRoomId: $('waitingRoomId'),
       waitingShareLink: $('waitingShareLink'),
       waitingCopyBtn: $('waitingCopyBtn'),
+      cancelWaitBtn: $('cancelWaitBtn'),
       
-      // Share
+      // Call info
+      partnerName: $('callPartnerName'),
+      partnerInitial: $('partnerInitial'),
+      statusText: $('callStatusText'),
+      timer: $('callTimer'),
+      netQuality: $('networkQuality'),
       shareLinkBox: $('shareLinkBox'),
       shareLink: $('shareLink'),
       copyLinkBtn: $('copyLinkBtn'),
       
-      // Call screen
-      callPartnerName: $('callPartnerName'),
-      callStatusText: $('callStatusText'),
-      callTimer: $('callTimer'),
-      localAudio: $('localAudio'),
-      remoteAudio: $('remoteAudio'),
-      localBars: $('localBars'),
-      remoteBars: $('remoteBars'),
-      networkQuality: $('networkQuality'),
-      volumeSlider: $('volumeSlider'),
-      chatBadge: $('chatBadge'),
+      // Controls
+      muteBtn: $('muteBtn'),
+      speakerBtn: $('speakerBtn'),
+      hangupBtn: $('hangupBtn'),
+      messageBtn: $('messageBtn'),
+      voiceNoteBtn: $('voiceNoteBtn'),
+      msgBadge: $('msgBadge'),
       
-      // Chat
-      chatPanel: $('chatPanel'),
-      chatMessages: $('chatMessages'),
-      chatInput: $('chatInput'),
+      // Sound waves
+      soundWaves: document.querySelector('.sound-waves'),
+      
+      // Messages panel
+      msgPanel: $('messagesPanel'),
+      msgList: $('messagesList'),
+      msgInput: $('msgInput'),
       sendMsgBtn: $('sendMsgBtn'),
-      closeChatBtn: $('closeChatBtn'),
+      closeMsgBtn: $('closeMsgBtn'),
+      voiceRecordBtn: $('voiceRecordBtn'),
       typingIndicator: $('typingIndicator'),
+      
+      // Voice recording
+      voiceOverlay: $('voiceRecordOverlay'),
+      recordTimer: $('recordTimer'),
+      cancelRecordBtn: $('cancelRecordBtn'),
+      sendRecordBtn: $('sendRecordBtn'),
       
       // History
       historyBtn: $('historyBtn'),
       historyModal: $('historyModal'),
-      closeHistoryBtn: $('closeHistoryBtn'),
       historyList: $('historyList'),
+      closeHistoryBtn: $('closeHistoryBtn'),
       clearHistoryBtn: $('clearHistoryBtn'),
       
       // Theme
-      themeBtn: $('themeBtn'),
-      
-      // Toast
-      toastContainer: $('toastContainer')
+      themeBtn: $('themeBtn')
     };
-  }
+  };
 
   // ============================================
-  // UTILITY FUNCTIONS
+  // UI UPDATES
   // ============================================
-  function log(message, type = 'info') {
-    const prefix = { info: 'ℹ️', success: '✅', error: '❌', warn: '⚠️' };
-    console.log(`${prefix[type] || 'ℹ️'} ${message}`);
-  }
-
-  function showToast(message, type = 'info', duration = 4000) {
-    const container = App.elements.toastContainer;
-    if (!container) return;
-    
-    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-    
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${message}</span>`;
-    
-    container.appendChild(toast);
-    
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transform = 'translateX(100%)';
-      setTimeout(() => toast.remove(), 300);
-    }, duration);
-  }
-
-  function setConnectionStatus(text, type = 'info') {
-    const el = App.elements;
-    if (el.connectionText) {
-      el.connectionText.textContent = text;
+  const setConnStatus = (text, type = 'info') => {
+    if (App.el.connText) App.el.connText.textContent = text;
+    if (App.el.connectionBar) {
+      App.el.connectionBar.className = 'connection-bar';
+      if (type === 'connected') App.el.connectionBar.classList.add('connected');
+      if (type === 'error') App.el.connectionBar.classList.add('error');
     }
-    if (el.connectionBar) {
-      el.connectionBar.className = 'connection-bar';
-      if (type === 'connected') el.connectionBar.classList.add('connected');
-      if (type === 'error') el.connectionBar.classList.add('error');
-    }
-  }
+  };
 
-  function showScreen(screenName) {
-    const el = App.elements;
+  const showScreen = name => {
+    App.el.preCall?.classList.add('hidden');
+    App.el.waiting?.classList.add('hidden');
+    App.el.inCall?.classList.add('hidden');
     
-    // Hide all screens
-    if (el.preCallScreen) el.preCallScreen.classList.add('hidden');
-    if (el.waitingScreen) el.waitingScreen.classList.add('hidden');
-    if (el.inCallScreen) el.inCallScreen.classList.add('hidden');
-    
-    // Show requested screen
-    switch (screenName) {
-      case 'precall':
-        if (el.preCallScreen) el.preCallScreen.classList.remove('hidden');
-        break;
-      case 'waiting':
-        if (el.waitingScreen) el.waitingScreen.classList.remove('hidden');
-        break;
-      case 'incall':
-        if (el.inCallScreen) el.inCallScreen.classList.remove('hidden');
-        break;
-    }
-  }
+    if (name === 'precall') App.el.preCall?.classList.remove('hidden');
+    if (name === 'waiting') App.el.waiting?.classList.remove('hidden');
+    if (name === 'incall') App.el.inCall?.classList.remove('hidden');
+  };
 
-  function setButtonLoading(button, isLoading) {
-    if (!button) return;
-    button.classList.toggle('loading', isLoading);
-    button.disabled = isLoading;
-  }
+  const setLoading = (btn, loading) => {
+    if (!btn) return;
+    btn.classList.toggle('loading', loading);
+    btn.disabled = loading;
+  };
 
-  function enableMainButtons(enabled) {
-    const el = App.elements;
-    if (el.createBtn) el.createBtn.disabled = !enabled;
-    if (el.joinBtn) el.joinBtn.disabled = !enabled;
-  }
+  const enableButtons = enabled => {
+    if (App.el.createBtn) App.el.createBtn.disabled = !enabled;
+    if (App.el.joinBtn) App.el.joinBtn.disabled = !enabled;
+  };
 
-  function formatDuration(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  function generateRandomRoomId() {
-    const adjectives = ['happy', 'sunny', 'cozy', 'sweet', 'calm', 'warm', 'bright', 'soft'];
-    const nouns = ['heart', 'star', 'moon', 'cloud', 'dream', 'wave', 'light', 'bird'];
-    
-    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const noun = nouns[Math.floor(Math.random() * nouns.length)];
-    const num = Math.floor(Math.random() * 1000);
-    
-    return `${adj}-${noun}-${num}`;
-  }
-
-  function getShareableLink(roomId) {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}?room=${encodeURIComponent(roomId)}`;
-  }
-
-  function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('Copied to clipboard!', 'success');
-    }).catch(() => {
-      showToast('Failed to copy', 'error');
-    });
-  }
-
-  function escapeHTML(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
-  // ============================================
-  // SOUND EFFECTS
-  // ============================================
-  function playSound(type) {
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioContext();
-      const oscillator = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      gainNode.gain.value = 0.1;
-      
-      switch (type) {
-        case 'ringtone':
-          oscillator.frequency.value = 440;
-          oscillator.start();
-          setTimeout(() => { oscillator.frequency.value = 550; }, 150);
-          setTimeout(() => { oscillator.stop(); ctx.close(); }, 300);
-          break;
-          
-        case 'connected':
-          oscillator.frequency.value = 523;
-          oscillator.start();
-          setTimeout(() => { oscillator.frequency.value = 659; }, 100);
-          setTimeout(() => { oscillator.frequency.value = 784; }, 200);
-          setTimeout(() => { oscillator.stop(); ctx.close(); }, 300);
-          break;
-          
-        case 'hangup':
-          oscillator.frequency.value = 400;
-          oscillator.start();
-          setTimeout(() => { oscillator.frequency.value = 300; }, 150);
-          setTimeout(() => { oscillator.stop(); ctx.close(); }, 300);
-          break;
-          
-        case 'message':
-          oscillator.frequency.value = 800;
-          gainNode.gain.value = 0.05;
-          oscillator.start();
-          setTimeout(() => { oscillator.stop(); ctx.close(); }, 100);
-          break;
-      }
-    } catch (e) {
-      // Ignore audio errors
-    }
-  }
-
-  function startRingtone() {
-    stopRingtone();
-    playSound('ringtone');
-    App.ringtoneInterval = setInterval(() => playSound('ringtone'), 2000);
-  }
-
-  function stopRingtone() {
-    if (App.ringtoneInterval) {
-      clearInterval(App.ringtoneInterval);
-      App.ringtoneInterval = null;
-    }
-  }
-
-  // ============================================
-  // CALL TIMER
-  // ============================================
-  function startCallTimer() {
-    App.callStartTime = Date.now();
-    
-    const updateTimer = () => {
-      if (!App.callStartTime) return;
-      const elapsed = Math.floor((Date.now() - App.callStartTime) / 1000);
-      if (App.elements.callTimer) {
-        App.elements.callTimer.textContent = formatDuration(elapsed);
-      }
-    };
-    
-    updateTimer();
-    App.timerInterval = setInterval(updateTimer, 1000);
-  }
-
-  function stopCallTimer() {
-    if (App.timerInterval) {
-      clearInterval(App.timerInterval);
-      App.timerInterval = null;
-    }
-    
-    const duration = App.callStartTime 
-      ? Math.floor((Date.now() - App.callStartTime) / 1000) 
-      : 0;
-    
-    App.callStartTime = null;
-    return duration;
-  }
-
-  // ============================================
-  // CALL HISTORY
-  // ============================================
-  function saveCallToHistory(partnerName, duration, type) {
-    try {
-      const history = JSON.parse(localStorage.getItem('callHistory') || '[]');
-      
-      history.unshift({
-        partner: partnerName || 'Unknown',
-        duration: duration,
-        type: type, // 'outgoing' or 'incoming'
-        timestamp: new Date().toISOString()
-      });
-      
-      // Keep only last 50 calls
-      while (history.length > 50) {
-        history.pop();
-      }
-      
-      localStorage.setItem('callHistory', JSON.stringify(history));
-    } catch (e) {
-      log('Failed to save history', 'error');
-    }
-  }
-
-  function loadCallHistory() {
-    const historyList = App.elements.historyList;
-    if (!historyList) return;
-    
-    try {
-      const history = JSON.parse(localStorage.getItem('callHistory') || '[]');
-      
-      if (history.length === 0) {
-        historyList.innerHTML = '<div class="empty-state">No calls yet 📞</div>';
-        return;
-      }
-      
-      historyList.innerHTML = history.map(call => {
-        const date = new Date(call.timestamp);
-        const dateStr = date.toLocaleDateString();
-        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const icon = call.type === 'outgoing' ? '📤' : '📥';
-        
-        return `
-          <div class="history-item">
-            <span class="history-icon">${icon}</span>
-            <div class="history-info">
-              <div class="history-name">${escapeHTML(call.partner)}</div>
-              <div class="history-time">${dateStr} ${timeStr}</div>
-            </div>
-            <div class="history-duration">${formatDuration(call.duration || 0)}</div>
-          </div>
-        `;
-      }).join('');
-      
-    } catch (e) {
-      historyList.innerHTML = '<div class="empty-state">Error loading history</div>';
-    }
-  }
-
-  function clearCallHistory() {
-    localStorage.removeItem('callHistory');
-    loadCallHistory();
-    showToast('History cleared', 'success');
-  }
-
-  // ============================================
-  // VISUALIZER
-  // ============================================
-  function setVisualizerActive(type, active) {
-    const bars = type === 'local' ? App.elements.localBars : App.elements.remoteBars;
-    if (bars && bars.parentElement) {
-      bars.parentElement.classList.toggle('active', active);
-    }
-  }
-
-  // ============================================
-  // NETWORK QUALITY
-  // ============================================
-  function updateNetworkQuality(quality) {
-    const el = App.elements.networkQuality;
+  const updateNetQuality = quality => {
+    const el = App.el.netQuality;
     if (!el) return;
-    
-    el.className = `network-quality ${quality}`;
-    const textEl = el.querySelector('.quality-text');
-    if (textEl) {
-      textEl.textContent = quality.charAt(0).toUpperCase() + quality.slice(1);
-    }
-  }
+    el.className = `net-badge ${quality}`;
+    const text = el.querySelector('.quality-text');
+    if (text) text.textContent = quality.charAt(0).toUpperCase() + quality.slice(1);
+  };
 
-  function startQualityMonitoring() {
-    stopQualityMonitoring();
-    
-    App.qosInterval = setInterval(async () => {
-      if (!App.peerConnection || App.peerConnection.connectionState !== 'connected') {
-        return;
-      }
-      
-      try {
-        const stats = await App.peerConnection.getStats();
-        
-        stats.forEach(report => {
-          if (report.type === 'inbound-rtp' && report.kind === 'audio') {
-            const packetsLost = report.packetsLost || 0;
-            const packetsReceived = report.packetsReceived || 0;
-            const total = packetsLost + packetsReceived;
-            
-            if (total === 0) return;
-            
-            const lossRatio = packetsLost / total;
-            
-            let quality = 'excellent';
-            if (lossRatio > 0.1) quality = 'poor';
-            else if (lossRatio > 0.05) quality = 'fair';
-            else if (lossRatio > 0.02) quality = 'good';
-            
-            updateNetworkQuality(quality);
-          }
-        });
-      } catch (e) {
-        // Ignore stats errors
-      }
-    }, 3000);
-  }
-
-  function stopQualityMonitoring() {
-    if (App.qosInterval) {
-      clearInterval(App.qosInterval);
-      App.qosInterval = null;
-    }
-  }
-
-  // ============================================
-  // WEBRTC FUNCTIONS
-  // ============================================
-  async function createPeerConnection() {
-    log('Creating peer connection...', 'info');
-    
-    App.peerConnection = new RTCPeerConnection({
-      iceServers: CONFIG.iceServers
-    });
-    
-    App.remoteStream = new MediaStream();
-    
-    if (App.elements.remoteAudio) {
-      App.elements.remoteAudio.srcObject = App.remoteStream;
-    }
-    
-    // ICE candidate handler
-    App.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        log('Sending ICE candidate', 'info');
-        App.socket.emit('ice-candidate', event.candidate);
-      }
-    };
-    
-    // Connection state handler
-    App.peerConnection.onconnectionstatechange = () => {
-      const state = App.peerConnection.connectionState;
-      log(`Connection state: ${state}`, 'info');
-      
-      switch (state) {
-        case 'connected':
-          onCallConnected();
-          break;
-        case 'disconnected':
-          onCallDisconnected();
-          break;
-        case 'failed':
-          onCallFailed();
-          break;
-      }
-    };
-    
-    // Track handler
-    App.peerConnection.ontrack = (event) => {
-      log('Received remote track', 'success');
-      event.streams[0].getTracks().forEach(track => {
-        App.remoteStream.addTrack(track);
-      });
-      setVisualizerActive('remote', true);
-    };
-    
-    log('Peer connection created', 'success');
-  }
-
-  async function getLocalMediaStream() {
-    log('Getting local audio...', 'info');
-    
-    try {
-      App.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: CONFIG.audioConstraints,
-        video: false
-      });
-      
-      if (App.elements.localAudio) {
-        App.elements.localAudio.srcObject = App.localStream;
-      }
-      
-      // Add tracks to peer connection
-      App.localStream.getTracks().forEach(track => {
-        App.peerConnection.addTrack(track, App.localStream);
-      });
-      
-      setVisualizerActive('local', true);
-      log('Local audio ready', 'success');
-      
-    } catch (error) {
-      log(`Microphone error: ${error.message}`, 'error');
-      showToast('Cannot access microphone. Please check permissions.', 'error');
-      throw error;
-    }
-  }
-
-  async function createAndSendOffer() {
-    log('Creating offer...', 'info');
-    
-    try {
-      const offer = await App.peerConnection.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: false
-      });
-      
-      await App.peerConnection.setLocalDescription(offer);
-      
-      App.socket.emit('offer', offer);
-      log('Offer sent', 'success');
-      
-    } catch (error) {
-      log(`Offer error: ${error.message}`, 'error');
-      throw error;
-    }
-  }
-
-  async function handleReceivedOffer(offer) {
-    log('Processing received offer...', 'info');
-    
-    try {
-      if (!App.peerConnection) {
-        await createPeerConnection();
-        await getLocalMediaStream();
-      }
-      
-      await App.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      
-      const answer = await App.peerConnection.createAnswer();
-      await App.peerConnection.setLocalDescription(answer);
-      
-      App.socket.emit('answer', answer);
-      log('Answer sent', 'success');
-      
-    } catch (error) {
-      log(`Handle offer error: ${error.message}`, 'error');
-    }
-  }
-
-  async function handleReceivedAnswer(answer) {
-    log('Processing received answer...', 'info');
-    
-    try {
-      await App.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      log('Answer processed', 'success');
-    } catch (error) {
-      log(`Handle answer error: ${error.message}`, 'error');
-    }
-  }
-
-  async function handleReceivedIceCandidate(data) {
-    try {
-      if (App.peerConnection && data.candidate) {
-        await App.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-        log('ICE candidate added', 'info');
-      }
-    } catch (error) {
-      log(`ICE error: ${error.message}`, 'error');
-    }
-  }
-
-  // ============================================
-  // CALL STATE HANDLERS
-  // ============================================
-  function onCallConnected() {
-    log('Call connected!', 'success');
-    
-    playSound('connected');
-    stopRingtone();
-    
-    setConnectionStatus('In Call', 'connected');
-    
-    if (App.elements.callStatusText) {
-      App.elements.callStatusText.textContent = 'Connected';
-    }
-    
-    startCallTimer();
-    startQualityMonitoring();
-    
-    showScreen('incall');
-    showToast('Connected! 🎉', 'success');
-  }
-
-  function onCallDisconnected() {
-    log('Call disconnected', 'warn');
-    
-    if (App.elements.callStatusText) {
-      App.elements.callStatusText.textContent = 'Reconnecting...';
-    }
-  }
-
-  function onCallFailed() {
-    log('Call failed', 'error');
-    showToast('Connection failed', 'error');
-    endCall();
-  }
-
-  // ============================================
-  // MAIN CALL FUNCTIONS
-  // ============================================
-  async function createRoom() {
-    const el = App.elements;
-    
-    const roomId = el.roomId?.value.trim();
-    const userName = el.userName?.value.trim() || 'Anonymous';
-    
-    if (!roomId) {
-      showToast('Please enter a Room ID', 'warning');
-      el.roomId?.focus();
-      return;
-    }
-    
-    if (roomId.length < 3) {
-      showToast('Room ID must be at least 3 characters', 'warning');
-      return;
-    }
-    
-    // Save user name
-    App.myName = userName;
-    localStorage.setItem('userName', userName);
-    App.socket.emit('set-name', userName);
-    
-    setButtonLoading(el.createBtn, true);
-    
-    // Send create room request
-    App.socket.emit('create-room', roomId);
-  }
-
-  async function joinRoom() {
-    const el = App.elements;
-    
-    const roomId = el.roomId?.value.trim();
-    const userName = el.userName?.value.trim() || 'Anonymous';
-    
-    if (!roomId) {
-      showToast('Please enter a Room ID', 'warning');
-      el.roomId?.focus();
-      return;
-    }
-    
-    // Save user name
-    App.myName = userName;
-    localStorage.setItem('userName', userName);
-    App.socket.emit('set-name', userName);
-    
-    setButtonLoading(el.joinBtn, true);
-    
-    // Send join room request
-    App.socket.emit('join-room', roomId);
-  }
-
-  async function onRoomCreated(data) {
-    log('Room created', 'success');
-    
-    // Extract room ID (handle both string and object)
-    const roomId = typeof data === 'string' ? data : (data.roomId || data);
-    
-    App.currentRoom = roomId;
-    App.currentRole = 'creator';
-    
-    // Generate share link
-    const shareLink = typeof data === 'object' && data.shareLink 
-      ? data.shareLink 
-      : getShareableLink(roomId);
-    
-    // Update waiting screen
-    if (App.elements.waitingRoomId) {
-      App.elements.waitingRoomId.textContent = roomId;
-    }
-    if (App.elements.waitingShareLink) {
-      App.elements.waitingShareLink.value = shareLink;
-    }
-    if (App.elements.shareLink) {
-      App.elements.shareLink.value = shareLink;
-    }
-    
-    // Show share box
-    if (App.elements.shareLinkBox) {
-      App.elements.shareLinkBox.classList.remove('hidden');
-    }
-    
-    try {
-      await createPeerConnection();
-      await getLocalMediaStream();
-      await createAndSendOffer();
-      
-      showScreen('waiting');
-      startRingtone();
-      
-      showToast(`Room "${roomId}" created! Share the link with your partner.`, 'success', 5000);
-      
-    } catch (error) {
-      log(`Create room error: ${error.message}`, 'error');
-      showToast('Failed to create room', 'error');
-      showScreen('precall');
-    }
-    
-    setButtonLoading(App.elements.createBtn, false);
-  }
-
-  async function onRoomJoined(data) {
-    log('Joined room', 'success');
-    
-    // Extract data
-    const roomId = typeof data === 'string' ? data : (data.roomId || data);
-    const creatorName = typeof data === 'object' ? data.creatorName : null;
-    
-    App.currentRoom = roomId;
-    App.currentRole = 'joiner';
-    App.partnerName = creatorName || 'Partner';
-    
-    if (App.elements.callPartnerName) {
-      App.elements.callPartnerName.textContent = App.partnerName;
-    }
-    
-    showToast('Joined! Connecting...', 'success');
-    setButtonLoading(App.elements.joinBtn, false);
-  }
-
-  function onPartnerJoined(data) {
-    log('Partner joined', 'success');
-    
-    const partnerName = typeof data === 'object' ? (data.name || 'Partner') : 'Partner';
-    App.partnerName = partnerName;
-    
-    if (App.elements.callPartnerName) {
-      App.elements.callPartnerName.textContent = partnerName;
-    }
-    
-    stopRingtone();
-    showToast(`${partnerName} joined!`, 'success');
-  }
-
-  function endCall() {
-    log('Ending call...', 'info');
-    
-    // Stop sounds and timers
-    stopRingtone();
-    const duration = stopCallTimer();
-    stopQualityMonitoring();
-    
-    playSound('hangup');
-    
-    // Save to history if call was connected
-    if (duration > 0) {
-      const callType = App.currentRole === 'creator' ? 'outgoing' : 'incoming';
-      saveCallToHistory(App.partnerName, duration, callType);
-    }
-    
-    // Close peer connection
-    if (App.peerConnection) {
-      App.peerConnection.close();
-      App.peerConnection = null;
-    }
-    
-    // Stop local media
-    if (App.localStream) {
-      App.localStream.getTracks().forEach(track => track.stop());
-      App.localStream = null;
-    }
-    
-    // Clear remote stream
-    App.remoteStream = null;
-    
-    // Reset state
-    App.currentRoom = null;
-    App.currentRole = null;
-    App.partnerName = 'Partner';
-    App.isMuted = false;
-    App.unreadMessages = 0;
-    
-    // Reset UI
-    setVisualizerActive('local', false);
-    setVisualizerActive('remote', false);
-    
-    if (App.elements.chatPanel) {
-      App.elements.chatPanel.classList.add('hidden');
-    }
-    if (App.elements.chatMessages) {
-      App.elements.chatMessages.innerHTML = '';
-    }
-    if (App.elements.shareLinkBox) {
-      App.elements.shareLinkBox.classList.add('hidden');
-    }
-    if (App.elements.callTimer) {
-      App.elements.callTimer.textContent = '00:00';
-    }
-    if (App.elements.muteBtn) {
-      App.elements.muteBtn.classList.remove('active');
-      const icon = App.elements.muteBtn.querySelector('.control-icon');
-      const label = App.elements.muteBtn.querySelector('.control-label');
-      if (icon) icon.textContent = '🎤';
-      if (label) label.textContent = 'Mute';
-    }
-    
-    // Show pre-call screen
-    showScreen('precall');
-    setConnectionStatus('Ready', 'connected');
-    enableMainButtons(true);
-    
-    showToast('Call ended', 'info');
-  }
-
-  // ============================================
-  // CHAT FUNCTIONS
-  // ============================================
-  function addChatMessage(data) {
-    const container = App.elements.chatMessages;
-    if (!container) return;
-    
-    const isMine = data.senderId === App.socket.id;
-    const time = new Date(data.timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-    
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `chat-message ${isMine ? 'sent' : 'received'}`;
-    
-    messageDiv.innerHTML = `
-      ${!isMine ? `<div class="chat-sender">${escapeHTML(data.sender)}</div>` : ''}
-      <div class="chat-bubble">${escapeHTML(data.text)}</div>
-      <div class="chat-time">${time}</div>
-    `;
-    
-    container.appendChild(messageDiv);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function sendChatMessage() {
-    const input = App.elements.chatInput;
-    if (!input) return;
-    
-    const text = input.value.trim();
-    if (!text || !App.currentRoom) return;
-    
-    App.socket.emit('chat-message', { text });
-    input.value = '';
-    
-    // Stop typing indicator
-    App.socket.emit('typing', false);
-  }
-
-  function handleChatMessage(data) {
-    addChatMessage(data);
-    
-    // If message is from partner
-    if (data.senderId !== App.socket.id) {
-      playSound('message');
-      
-      // Update unread count if chat is hidden
-      if (App.elements.chatPanel?.classList.contains('hidden')) {
-        App.unreadMessages++;
-        updateChatBadge();
-      }
-    }
-  }
-
-  function updateChatBadge() {
-    const badge = App.elements.chatBadge;
+  const updateMsgBadge = () => {
+    const badge = App.el.msgBadge;
     if (!badge) return;
-    
-    if (App.unreadMessages > 0) {
-      badge.textContent = App.unreadMessages > 9 ? '9+' : App.unreadMessages;
+    if (App.unreadMsgs > 0 && !App.msgPanelOpen) {
+      badge.textContent = App.unreadMsgs > 9 ? '9+' : App.unreadMsgs;
       badge.classList.remove('hidden');
     } else {
       badge.classList.add('hidden');
     }
-  }
+  };
 
-  function toggleChat() {
-    const panel = App.elements.chatPanel;
-    if (!panel) return;
-    
-    panel.classList.toggle('hidden');
-    
-    if (!panel.classList.contains('hidden')) {
-      App.unreadMessages = 0;
-      updateChatBadge();
-      App.elements.chatInput?.focus();
+  const updatePartnerDisplay = () => {
+    if (App.el.partnerName) App.el.partnerName.textContent = App.partnerName;
+    if (App.el.partnerInitial) App.el.partnerInitial.textContent = App.partnerName.charAt(0).toUpperCase();
+  };
+
+  const setSoundWavesActive = active => {
+    App.el.soundWaves?.classList.toggle('active', active);
+  };
+
+  // ============================================
+  // SOUNDS
+  // ============================================
+  const playTone = type => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.value = 0.1;
+      
+      osc.start();
+      
+      switch (type) {
+        case 'ring':
+          osc.frequency.value = 440;
+          setTimeout(() => osc.frequency.value = 550, 150);
+          setTimeout(() => { osc.stop(); ctx.close(); }, 300);
+          break;
+        case 'connect':
+          osc.frequency.value = 523;
+          setTimeout(() => osc.frequency.value = 659, 100);
+          setTimeout(() => osc.frequency.value = 784, 200);
+          setTimeout(() => { osc.stop(); ctx.close(); }, 300);
+          break;
+        case 'hangup':
+          osc.frequency.value = 400;
+          setTimeout(() => osc.frequency.value = 300, 150);
+          setTimeout(() => { osc.stop(); ctx.close(); }, 300);
+          break;
+        case 'message':
+          gain.gain.value = 0.05;
+          osc.frequency.value = 800;
+          setTimeout(() => { osc.stop(); ctx.close(); }, 100);
+          break;
+      }
+    } catch (e) {}
+  };
+
+  const startRing = () => {
+    stopRing();
+    playTone('ring');
+    App.ringInterval = setInterval(() => playTone('ring'), 2000);
+  };
+
+  const stopRing = () => {
+    if (App.ringInterval) {
+      clearInterval(App.ringInterval);
+      App.ringInterval = null;
     }
-  }
+  };
 
   // ============================================
-  // CONTROL FUNCTIONS
+  // TIMER
   // ============================================
-  function toggleMute() {
+  const startTimer = () => {
+    App.callStart = Date.now();
+    const update = () => {
+      if (!App.callStart) return;
+      const secs = Math.floor((Date.now() - App.callStart) / 1000);
+      if (App.el.timer) App.el.timer.textContent = formatTime(secs);
+    };
+    update();
+    App.timerInterval = setInterval(update, 1000);
+  };
+
+  const stopTimer = () => {
+    if (App.timerInterval) {
+      clearInterval(App.timerInterval);
+      App.timerInterval = null;
+    }
+    const duration = App.callStart ? Math.floor((Date.now() - App.callStart) / 1000) : 0;
+    App.callStart = null;
+    return duration;
+  };
+
+  // ============================================
+  // HISTORY
+  // ============================================
+  const saveHistory = (partner, duration, type) => {
+    try {
+      const history = JSON.parse(localStorage.getItem('voiceCallHistory') || '[]');
+      history.unshift({ partner, duration, type, time: new Date().toISOString() });
+      if (history.length > 50) history.pop();
+      localStorage.setItem('voiceCallHistory', JSON.stringify(history));
+    } catch (e) {}
+  };
+
+  const loadHistory = () => {
+    const list = App.el.historyList;
+    if (!list) return;
+    
+    try {
+      const history = JSON.parse(localStorage.getItem('voiceCallHistory') || '[]');
+      
+      if (!history.length) {
+        list.innerHTML = `<div class="empty-state"><span>📞</span><p>No calls yet</p><small>Your call history will appear here</small></div>`;
+        return;
+      }
+      
+      list.innerHTML = history.map(c => {
+        const d = new Date(c.time);
+        const icon = c.type === 'outgoing' ? '📤' : '📥';
+        return `
+          <div class="history-item">
+            <span class="history-icon">${icon}</span>
+            <div class="history-info">
+              <div class="history-name">${escape(c.partner)}</div>
+              <div class="history-time">${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</div>
+            </div>
+            <div class="history-duration">${formatTime(c.duration || 0)}</div>
+          </div>`;
+      }).join('');
+    } catch (e) {}
+  };
+
+  const clearHistory = () => {
+    localStorage.removeItem('voiceCallHistory');
+    loadHistory();
+    toast('History cleared', 'success');
+  };
+
+  // ============================================
+  // QUALITY MONITORING
+  // ============================================
+  const startQosMonitor = () => {
+    stopQosMonitor();
+    
+    App.qosInterval = setInterval(async () => {
+      if (!App.pc || App.pc.connectionState !== 'connected') return;
+      
+      try {
+        const stats = await App.pc.getStats();
+        let lost = 0, received = 0, rtt = 0;
+        
+        stats.forEach(r => {
+          if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+            lost += r.packetsLost || 0;
+            received += r.packetsReceived || 0;
+          }
+          if (r.type === 'candidate-pair' && r.state === 'succeeded') {
+            rtt = r.currentRoundTripTime || 0;
+          }
+        });
+        
+        const total = lost + received;
+        if (!total) return;
+        
+        const lossRate = lost / total;
+        let quality = 'excellent';
+        
+        if (lossRate > 0.1 || rtt > 0.5) quality = 'poor';
+        else if (lossRate > 0.05 || rtt > 0.3) quality = 'fair';
+        else if (lossRate > 0.02 || rtt > 0.15) quality = 'good';
+        
+        updateNetQuality(quality);
+      } catch (e) {}
+    }, 3000);
+  };
+
+  const stopQosMonitor = () => {
+    if (App.qosInterval) {
+      clearInterval(App.qosInterval);
+      App.qosInterval = null;
+    }
+  };
+
+  // ============================================
+  // MEDIA
+  // ============================================
+  const getMedia = async () => {
+    log('Getting audio...', 'info');
+    
+    try {
+      App.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: CONFIG.audio,
+        video: false
+      });
+      
+      if (App.el.localAudio) {
+        App.el.localAudio.srcObject = App.localStream;
+      }
+      
+      if (App.pc) {
+        App.localStream.getTracks().forEach(track => {
+          App.pc.addTrack(track, App.localStream);
+        });
+      }
+      
+      log('Audio ready', 'success');
+    } catch (e) {
+      log('Media error: ' + e.message, 'error');
+      
+      if (e.name === 'NotAllowedError') {
+        toast('Please allow microphone access', 'error');
+      } else {
+        toast('Cannot access microphone', 'error');
+      }
+      throw e;
+    }
+  };
+
+  const stopMedia = () => {
+    if (App.localStream) {
+      App.localStream.getTracks().forEach(t => t.stop());
+      App.localStream = null;
+    }
+  };
+
+  // ============================================
+  // WEBRTC
+  // ============================================
+  const createPC = async () => {
+    log('Creating peer connection...', 'info');
+    
+    App.iceQueue = [];
+    App.iceReady = false;
+    
+    if (App.pc) {
+      App.pc.close();
+      App.pc = null;
+    }
+    
+    App.pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 10
+    });
+    
+    App.remoteStream = new MediaStream();
+    if (App.el.remoteAudio) {
+      App.el.remoteAudio.srcObject = App.remoteStream;
+    }
+    
+    App.pc.onicecandidate = e => {
+      if (e.candidate) {
+        log('ICE: ' + (e.candidate.type || 'unknown'), 'info');
+        App.socket.emit('ice-candidate', { candidate: e.candidate });
+      }
+    };
+    
+    App.pc.oniceconnectionstatechange = () => {
+      const state = App.pc?.iceConnectionState;
+      log('ICE: ' + state, 'info');
+      
+      switch (state) {
+        case 'connected':
+        case 'completed':
+          onConnected();
+          break;
+        case 'disconnected':
+          onDisconnected();
+          break;
+        case 'failed':
+          onFailed();
+          break;
+      }
+    };
+    
+    App.pc.ontrack = e => {
+      log('Remote track received', 'success');
+      e.streams[0].getTracks().forEach(t => App.remoteStream.addTrack(t));
+      setSoundWavesActive(true);
+    };
+    
+    log('Peer connection created', 'success');
+  };
+
+  // ============================================
+  // SIGNALING
+  // ============================================
+  const sendOffer = async () => {
+    log('Creating offer...', 'info');
+    
+    try {
+      const offer = await App.pc.createOffer({ offerToReceiveAudio: true });
+      await App.pc.setLocalDescription(offer);
+      
+      App.socket.emit('offer', { offer, fromName: App.myName });
+      log('Offer sent', 'success');
+    } catch (e) {
+      log('Offer error: ' + e.message, 'error');
+      throw e;
+    }
+  };
+
+  const handleOffer = async data => {
+    log('Received offer...', 'info');
+    
+    try {
+      if (data.fromName) {
+        App.partnerName = data.fromName;
+        updatePartnerDisplay();
+      }
+      
+      if (!App.pc) await createPC();
+      if (!App.localStream) await getMedia();
+      
+      await App.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      App.iceReady = true;
+      
+      await processIceQueue();
+      
+      const answer = await App.pc.createAnswer();
+      await App.pc.setLocalDescription(answer);
+      
+      App.socket.emit('answer', { answer, targetId: data.from, fromName: App.myName });
+      log('Answer sent', 'success');
+      
+      if (App.el.inCall?.classList.contains('hidden')) {
+        showScreen('incall');
+        if (App.el.statusText) App.el.statusText.textContent = 'Connecting...';
+      }
+    } catch (e) {
+      log('Handle offer error: ' + e.message, 'error');
+      toast('Connection failed', 'error');
+    }
+  };
+
+  const handleAnswer = async data => {
+    log('Received answer...', 'info');
+    
+    try {
+      if (data.fromName) {
+        App.partnerName = data.fromName;
+        updatePartnerDisplay();
+      }
+      
+      await App.pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      App.iceReady = true;
+      
+      await processIceQueue();
+    } catch (e) {
+      log('Handle answer error: ' + e.message, 'error');
+    }
+  };
+
+  const handleIce = async data => {
+    try {
+      if (!data.candidate) return;
+      
+      if (!App.pc || !App.iceReady) {
+        App.iceQueue.push(data.candidate);
+        return;
+      }
+      
+      await App.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } catch (e) {
+      log('ICE error: ' + e.message, 'error');
+    }
+  };
+
+  const processIceQueue = async () => {
+    if (!App.pc || !App.iceReady || !App.iceQueue.length) return;
+    
+    for (const candidate of App.iceQueue) {
+      try {
+        await App.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {}
+    }
+    App.iceQueue = [];
+  };
+
+  // ============================================
+  // CONNECTION HANDLERS
+  // ============================================
+  const onConnected = () => {
+    if (App.callStart) return;
+    
+    log('Call connected!', 'success');
+    
+    playTone('connect');
+    stopRing();
+    
+    setConnStatus('In Call', 'connected');
+    if (App.el.statusText) App.el.statusText.textContent = 'Connected';
+    
+    startTimer();
+    startQosMonitor();
+    setSoundWavesActive(true);
+    
+    showScreen('incall');
+    toast('Connected! 🎉', 'success');
+    
+    App.reconnectAttempts = 0;
+  };
+
+  const onDisconnected = () => {
+    log('Disconnected...', 'warn');
+    if (App.el.statusText) App.el.statusText.textContent = 'Reconnecting...';
+    toast('Connection unstable...', 'warning');
+    setSoundWavesActive(false);
+  };
+
+  const onFailed = async () => {
+    log('Connection failed', 'error');
+    
+    App.reconnectAttempts++;
+    
+    if (App.reconnectAttempts <= 3 && App.role === 'creator') {
+      log('ICE restart...', 'warn');
+      toast('Reconnecting...', 'warning');
+      
+      try {
+        const offer = await App.pc.createOffer({ iceRestart: true });
+        await App.pc.setLocalDescription(offer);
+        App.socket.emit('offer', { offer });
+      } catch (e) {
+        endCall();
+      }
+    } else {
+      toast('Connection failed', 'error');
+      endCall();
+    }
+  };
+
+  // ============================================
+  // CALL MANAGEMENT
+  // ============================================
+  const createRoom = async () => {
+    const roomId = App.el.roomId?.value.trim();
+    const userName = App.el.userName?.value.trim() || 'Anonymous';
+    
+    if (!roomId) {
+      toast('Enter a Room ID', 'warning');
+      App.el.roomId?.focus();
+      return;
+    }
+    
+    if (roomId.length < 3) {
+      toast('Room ID too short', 'warning');
+      return;
+    }
+    
+    App.myName = userName;
+    localStorage.setItem('userName', userName);
+    App.socket.emit('set-name', userName);
+    
+    setLoading(App.el.createBtn, true);
+    App.socket.emit('create-room', roomId);
+  };
+
+  const joinRoom = async () => {
+    const roomId = App.el.roomId?.value.trim();
+    const userName = App.el.userName?.value.trim() || 'Anonymous';
+    
+    if (!roomId) {
+      toast('Enter a Room ID', 'warning');
+      App.el.roomId?.focus();
+      return;
+    }
+    
+    App.myName = userName;
+    localStorage.setItem('userName', userName);
+    App.socket.emit('set-name', userName);
+    
+    setLoading(App.el.joinBtn, true);
+    App.socket.emit('join-room', roomId);
+  };
+
+  const onRoomCreated = async data => {
+    log('Room created', 'success');
+    
+    const roomId = typeof data === 'string' ? data : (data.roomId || data);
+    const link = shareLink(roomId);
+    
+    App.room = roomId;
+    App.role = 'creator';
+    
+    if (App.el.waitingRoomId) App.el.waitingRoomId.textContent = roomId;
+    if (App.el.waitingShareLink) App.el.waitingShareLink.value = link;
+    if (App.el.shareLink) App.el.shareLink.value = link;
+    if (App.el.shareLinkBox) App.el.shareLinkBox.classList.remove('hidden');
+    
+    try {
+      await createPC();
+      await getMedia();
+      await sendOffer();
+      
+      showScreen('waiting');
+      startRing();
+      
+      toast(`Room "${roomId}" created!`, 'success', 5000);
+    } catch (e) {
+      toast('Failed to create room', 'error');
+      showScreen('precall');
+    }
+    
+    setLoading(App.el.createBtn, false);
+  };
+
+  const onRoomJoined = async data => {
+    log('Joined room', 'success');
+    
+    const roomId = typeof data === 'string' ? data : (data.roomId || data);
+    App.room = roomId;
+    App.role = 'joiner';
+    
+    if (data.creatorName) {
+      App.partnerName = data.creatorName;
+      updatePartnerDisplay();
+    }
+    
+    setLoading(App.el.joinBtn, false);
+    toast('Joined! Connecting...', 'success');
+    
+    try {
+      await createPC();
+      await getMedia();
+    } catch (e) {
+      toast('Failed to setup', 'error');
+      showScreen('precall');
+    }
+  };
+
+  const onPartnerJoined = data => {
+    log('Partner joined', 'success');
+    
+    App.partnerName = (typeof data === 'object' ? data.name : null) || 'Partner';
+    updatePartnerDisplay();
+    
+    stopRing();
+    toast(`${App.partnerName} joined!`, 'success');
+    
+    if (App.role === 'creator') {
+      sendOffer().catch(e => log('Offer error: ' + e.message, 'error'));
+    }
+  };
+
+  const endCall = () => {
+    log('Ending call...', 'info');
+    
+    stopRing();
+    const duration = stopTimer();
+    stopQosMonitor();
+    setSoundWavesActive(false);
+    
+    playTone('hangup');
+    
+    if (duration > 0) {
+      saveHistory(App.partnerName, duration, App.role === 'creator' ? 'outgoing' : 'incoming');
+    }
+    
+    if (App.pc) {
+      App.pc.close();
+      App.pc = null;
+    }
+    
+    stopMedia();
+    stopRecording(true);
+    
+    App.remoteStream = null;
+    App.iceQueue = [];
+    App.iceReady = false;
+    App.room = null;
+    App.role = null;
+    App.partnerName = 'Partner';
+    App.muted = false;
+    App.speakerOff = false;
+    App.unreadMsgs = 0;
+    App.reconnectAttempts = 0;
+    App.msgPanelOpen = false;
+    
+    if (App.el.msgPanel) App.el.msgPanel.classList.add('hidden');
+    if (App.el.msgList) App.el.msgList.innerHTML = '';
+    if (App.el.shareLinkBox) App.el.shareLinkBox.classList.add('hidden');
+    if (App.el.timer) App.el.timer.textContent = '00:00';
+    
+    resetControls();
+    showScreen('precall');
+    setConnStatus('Ready', 'connected');
+    enableButtons(true);
+    
+    toast('Call ended', 'info');
+  };
+
+  const resetControls = () => {
+    App.el.muteBtn?.classList.remove('active');
+    App.el.speakerBtn?.classList.remove('active');
+    updateMsgBadge();
+  };
+
+  // ============================================
+  // CONTROLS
+  // ============================================
+  const toggleMute = () => {
     if (!App.localStream) return;
     
-    App.isMuted = !App.isMuted;
+    App.muted = !App.muted;
+    App.localStream.getAudioTracks().forEach(t => t.enabled = !App.muted);
     
-    App.localStream.getAudioTracks().forEach(track => {
-      track.enabled = !App.isMuted;
-    });
+    App.el.muteBtn?.classList.toggle('active', App.muted);
+    App.socket.emit('mute-status', App.muted);
+    toast(App.muted ? 'Muted' : 'Unmuted', 'info');
+  };
+
+  const toggleSpeaker = () => {
+    App.speakerOff = !App.speakerOff;
     
-    const btn = App.elements.muteBtn;
-    if (btn) {
-      btn.classList.toggle('active', App.isMuted);
-      const icon = btn.querySelector('.control-icon');
-      const label = btn.querySelector('.control-label');
-      if (icon) icon.textContent = App.isMuted ? '🔇' : '🎤';
-      if (label) label.textContent = App.isMuted ? 'Unmute' : 'Mute';
+    if (App.el.remoteAudio) {
+      App.el.remoteAudio.muted = App.speakerOff;
     }
     
-    App.socket.emit('mute-status', App.isMuted);
-    showToast(App.isMuted ? 'Microphone muted' : 'Microphone unmuted', 'info');
-  }
+    App.el.speakerBtn?.classList.toggle('active', App.speakerOff);
+    toast(App.speakerOff ? 'Speaker off' : 'Speaker on', 'info');
+  };
 
-  function toggleSpeaker() {
-    const btn = App.elements.speakerBtn;
-    if (!btn) return;
-    
-    btn.classList.toggle('active');
-    const icon = btn.querySelector('.control-icon');
-    const isActive = btn.classList.contains('active');
-    if (icon) icon.textContent = isActive ? '🔈' : '🔊';
-  }
-
-  function setVolume(value) {
-    if (App.elements.remoteAudio) {
-      App.elements.remoteAudio.volume = value / 100;
-    }
-  }
-
-  function hangUp() {
+  const hangup = () => {
     App.socket.emit('hang-up');
     endCall();
-  }
+  };
 
   // ============================================
-  // SOCKET EVENT HANDLERS
+  // MESSAGES
   // ============================================
-  function setupSocketEvents() {
-    const socket = App.socket;
+  const toggleMsgPanel = () => {
+    App.msgPanelOpen = !App.msgPanelOpen;
+    App.el.msgPanel?.classList.toggle('hidden', !App.msgPanelOpen);
     
-    socket.on('connect', () => {
-      log('Connected to server', 'success');
-      setConnectionStatus('Ready to call', 'connected');
-      enableMainButtons(true);
+    if (App.msgPanelOpen) {
+      App.unreadMsgs = 0;
+      updateMsgBadge();
+      App.el.msgInput?.focus();
+    }
+  };
+
+  const sendMessage = () => {
+    const text = App.el.msgInput?.value.trim();
+    if (!text || !App.room) return;
+    
+    App.socket.emit('chat-message', { text });
+    App.el.msgInput.value = '';
+    App.socket.emit('typing', false);
+  };
+
+  const addMessage = data => {
+    const list = App.el.msgList;
+    if (!list) return;
+    
+    const mine = data.senderId === App.socket.id;
+    const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    const div = document.createElement('div');
+    div.className = `message ${mine ? 'sent' : 'received'}`;
+    
+    // Check if voice note
+    if (data.type === 'voice' && data.audioData) {
+      const waves = Array(12).fill(0).map(() => `<span style="height:${4 + Math.random() * 16}px"></span>`).join('');
+      div.innerHTML = `
+        ${!mine ? `<div class="msg-sender">${escape(data.sender)}</div>` : ''}
+        <div class="msg-bubble">
+          <div class="voice-msg">
+            <button class="voice-play-btn" data-audio="${data.audioData}">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+            <div class="voice-wave">${waves}</div>
+            <span class="voice-duration">${data.duration || '0:00'}</span>
+          </div>
+        </div>
+        <div class="msg-time">${time}</div>
+      `;
+    } else {
+      div.innerHTML = `
+        ${!mine ? `<div class="msg-sender">${escape(data.sender)}</div>` : ''}
+        <div class="msg-bubble">${escape(data.text)}</div>
+        <div class="msg-time">${time}</div>
+      `;
+    }
+    
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+    
+    // Add play functionality for voice notes
+    const playBtn = div.querySelector('.voice-play-btn');
+    if (playBtn) {
+      playBtn.addEventListener('click', () => playVoiceNote(playBtn));
+    }
+  };
+
+  const handleMessage = data => {
+    addMessage(data);
+    
+    if (data.senderId !== App.socket.id) {
+      playTone('message');
       
-      // Set app type for server
-      socket.emit('set-app-type', 'voice');
+      if (!App.msgPanelOpen) {
+        App.unreadMsgs++;
+        updateMsgBadge();
+      }
+    }
+  };
+
+  // ============================================
+  // VOICE NOTES
+  // ============================================
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Restore user name
-      const savedName = localStorage.getItem('userName');
-      if (savedName) {
-        App.myName = savedName;
-        if (App.elements.userName) {
-          App.elements.userName.value = savedName;
+      App.mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      App.audioChunks = [];
+      
+      App.mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) {
+          App.audioChunks.push(e.data);
         }
-        socket.emit('set-name', savedName);
+      };
+      
+      App.mediaRecorder.start();
+      App.recordStart = Date.now();
+      
+      // Update timer
+      const updateRecordTimer = () => {
+        if (!App.recordStart) return;
+        const secs = Math.floor((Date.now() - App.recordStart) / 1000);
+        if (App.el.recordTimer) App.el.recordTimer.textContent = formatTime(secs);
+      };
+      updateRecordTimer();
+      App.recordInterval = setInterval(updateRecordTimer, 1000);
+      
+      // Show overlay
+      App.el.voiceOverlay?.classList.remove('hidden');
+      App.el.voiceRecordBtn?.classList.add('recording');
+      
+      log('Recording started', 'info');
+      
+    } catch (e) {
+      log('Record error: ' + e.message, 'error');
+      toast('Cannot access microphone', 'error');
+    }
+  };
+
+  const stopRecording = (cancel = false) => {
+    if (App.recordInterval) {
+      clearInterval(App.recordInterval);
+      App.recordInterval = null;
+    }
+    
+    const duration = App.recordStart ? Math.floor((Date.now() - App.recordStart) / 1000) : 0;
+    App.recordStart = null;
+    
+    App.el.voiceOverlay?.classList.add('hidden');
+    App.el.voiceRecordBtn?.classList.remove('recording');
+    
+    if (App.mediaRecorder && App.mediaRecorder.state !== 'inactive') {
+      App.mediaRecorder.onstop = async () => {
+        if (!cancel && App.audioChunks.length > 0) {
+          const blob = new Blob(App.audioChunks, { type: 'audio/webm' });
+          const reader = new FileReader();
+          
+          reader.onloadend = () => {
+            const base64 = reader.result;
+            
+            App.socket.emit('chat-message', {
+              type: 'voice',
+              audioData: base64,
+              duration: formatTime(duration)
+            });
+          };
+          
+          reader.readAsDataURL(blob);
+        }
+        
+        // Stop all tracks
+        App.mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        App.mediaRecorder = null;
+        App.audioChunks = [];
+      };
+      
+      App.mediaRecorder.stop();
+    }
+    
+    log(cancel ? 'Recording cancelled' : 'Recording stopped', 'info');
+  };
+
+  const playVoiceNote = (btn) => {
+    const audioData = btn.dataset.audio;
+    if (!audioData) return;
+    
+    const audio = new Audio(audioData);
+    
+    const icon = btn.querySelector('svg');
+    const originalIcon = icon.innerHTML;
+    
+    audio.onplay = () => {
+      icon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+    };
+    
+    audio.onended = () => {
+      icon.innerHTML = originalIcon;
+    };
+    
+    audio.play();
+  };
+
+  // ============================================
+  // SOCKET EVENTS
+  // ============================================
+  const setupSocket = () => {
+    const s = App.socket;
+    
+    s.on('connect', () => {
+      log('Connected to server', 'success');
+      setConnStatus('Ready', 'connected');
+      enableButtons(true);
+      
+      s.emit('set-app-type', 'voice');
+      
+      const name = localStorage.getItem('userName');
+      if (name) {
+        App.myName = name;
+        if (App.el.userName) App.el.userName.value = name;
+        s.emit('set-name', name);
       }
       
-      // Check URL for room parameter
-      const urlParams = new URLSearchParams(window.location.search);
-      const roomFromUrl = urlParams.get('room');
-      if (roomFromUrl && App.elements.roomId) {
-        App.elements.roomId.value = roomFromUrl;
-        showToast('Room ID loaded from link', 'info');
+      const params = new URLSearchParams(location.search);
+      const room = params.get('room');
+      if (room && App.el.roomId) {
+        App.el.roomId.value = room;
+        toast('Room ID loaded', 'info');
       }
     });
     
-    socket.on('disconnect', () => {
-      log('Disconnected from server', 'error');
-      setConnectionStatus('Disconnected', 'error');
-      enableMainButtons(false);
+    s.on('disconnect', () => {
+      log('Disconnected', 'error');
+      setConnStatus('Disconnected', 'error');
+      enableButtons(false);
     });
     
-    socket.on('error', (data) => {
-      log(`Server error: ${data.message}`, 'error');
-      showToast(data.message, 'error', 5000);
+    s.on('reconnect', () => {
+      log('Reconnected', 'success');
+      setConnStatus('Reconnected', 'connected');
+      enableButtons(true);
+    });
+    
+    s.on('error', data => {
+      log('Server error: ' + data.message, 'error');
+      toast(data.message, 'error', 5000);
       
-      setButtonLoading(App.elements.createBtn, false);
-      setButtonLoading(App.elements.joinBtn, false);
-      
-      stopRingtone();
+      setLoading(App.el.createBtn, false);
+      setLoading(App.el.joinBtn, false);
+      stopRing();
       showScreen('precall');
     });
     
-    socket.on('room-created', onRoomCreated);
-    socket.on('room-joined', onRoomJoined);
-    socket.on('user-joined', onPartnerJoined);
+    s.on('room-created', onRoomCreated);
+    s.on('room-joined', onRoomJoined);
+    s.on('user-joined', onPartnerJoined);
     
-    socket.on('offer', handleReceivedOffer);
-    socket.on('answer', handleReceivedAnswer);
-    socket.on('ice-candidate', handleReceivedIceCandidate);
+    s.on('offer', handleOffer);
+    s.on('answer', handleAnswer);
+    s.on('ice-candidate', handleIce);
     
-    socket.on('chat-message', handleChatMessage);
+    s.on('chat-message', handleMessage);
     
-    socket.on('user-typing', (data) => {
-      const indicator = App.elements.typingIndicator;
-      if (indicator) {
-        indicator.classList.toggle('hidden', !data.isTyping);
-      }
+    s.on('user-typing', data => {
+      App.el.typingIndicator?.classList.toggle('hidden', !data.isTyping);
     });
     
-    socket.on('partner-muted', (data) => {
-      const msg = data.isMuted ? '🔇 Partner muted their mic' : '🔊 Partner unmuted';
-      showToast(msg, 'info');
+    s.on('partner-muted', data => {
+      toast(data.isMuted ? '🔇 Partner muted' : '🔊 Partner unmuted', 'info');
     });
     
-    socket.on('user-left', (data) => {
-      const name = data.name || 'Partner';
-      showToast(`${name} left the call`, 'warning');
+    s.on('user-left', data => {
+      toast(`${data.name || 'Partner'} left`, 'warning');
       endCall();
     });
     
-    socket.on('call-ended', () => {
-      showToast('Partner ended the call', 'info');
+    s.on('call-ended', () => {
+      toast('Partner ended the call', 'info');
       endCall();
     });
-  }
+  };
 
   // ============================================
-  // UI EVENT HANDLERS
+  // UI EVENTS
   // ============================================
-  function setupUIEvents() {
-    const el = App.elements;
-    
-    // Generate Room ID
-    el.generateBtn?.addEventListener('click', () => {
-      if (el.roomId) {
-        el.roomId.value = generateRandomRoomId();
-        showToast('Room ID generated', 'success');
+  const setupUI = () => {
+    // Pre-call
+    App.el.generateBtn?.addEventListener('click', () => {
+      if (App.el.roomId) {
+        App.el.roomId.value = randomRoom();
+        toast('Room ID generated', 'success');
       }
     });
     
-    // Copy Room ID
-    el.copyRoomBtn?.addEventListener('click', () => {
-      if (el.roomId?.value) {
-        copyToClipboard(el.roomId.value);
-      }
+    App.el.copyRoomBtn?.addEventListener('click', () => {
+      if (App.el.roomId?.value) copyText(App.el.roomId.value);
     });
     
-    // Create Room
-    el.createBtn?.addEventListener('click', createRoom);
+    App.el.createBtn?.addEventListener('click', createRoom);
+    App.el.joinBtn?.addEventListener('click', joinRoom);
     
-    // Join Room
-    el.joinBtn?.addEventListener('click', joinRoom);
+    App.el.roomId?.addEventListener('keypress', e => {
+      if (e.key === 'Enter') createRoom();
+    });
     
-    // Cancel Waiting
-    el.cancelWaitBtn?.addEventListener('click', () => {
+    // Waiting
+    App.el.cancelWaitBtn?.addEventListener('click', () => {
       App.socket.emit('hang-up');
       endCall();
     });
     
-    // Copy Share Links
-    el.copyLinkBtn?.addEventListener('click', () => {
-      if (el.shareLink?.value) {
-        copyToClipboard(el.shareLink.value);
-      }
+    App.el.waitingCopyBtn?.addEventListener('click', () => {
+      if (App.el.waitingShareLink?.value) copyText(App.el.waitingShareLink.value);
     });
     
-    el.waitingCopyBtn?.addEventListener('click', () => {
-      if (el.waitingShareLink?.value) {
-        copyToClipboard(el.waitingShareLink.value);
-      }
+    App.el.copyLinkBtn?.addEventListener('click', () => {
+      if (App.el.shareLink?.value) copyText(App.el.shareLink.value);
     });
     
-    // Call Controls
-    el.muteBtn?.addEventListener('click', toggleMute);
-    el.speakerBtn?.addEventListener('click', toggleSpeaker);
-    el.chatBtn?.addEventListener('click', toggleChat);
-    el.hangupBtn?.addEventListener('click', hangUp);
+    // Controls
+    App.el.muteBtn?.addEventListener('click', toggleMute);
+    App.el.speakerBtn?.addEventListener('click', toggleSpeaker);
+    App.el.hangupBtn?.addEventListener('click', hangup);
+    App.el.messageBtn?.addEventListener('click', toggleMsgPanel);
+    App.el.voiceNoteBtn?.addEventListener('click', toggleMsgPanel);
     
-    // Volume
-    el.volumeSlider?.addEventListener('input', (e) => {
-      setVolume(e.target.value);
+    // Messages
+    App.el.closeMsgBtn?.addEventListener('click', () => {
+      App.msgPanelOpen = false;
+      App.el.msgPanel?.classList.add('hidden');
     });
     
-    // Chat
-    el.closeChatBtn?.addEventListener('click', () => {
-      el.chatPanel?.classList.add('hidden');
+    App.el.sendMsgBtn?.addEventListener('click', sendMessage);
+    
+    App.el.msgInput?.addEventListener('keypress', e => {
+      if (e.key === 'Enter') sendMessage();
     });
     
-    el.sendMsgBtn?.addEventListener('click', sendChatMessage);
-    
-    el.chatInput?.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        sendChatMessage();
-      }
-    });
-    
-    // Typing indicator
-    let typingTimeout;
-    el.chatInput?.addEventListener('input', () => {
+    let typingTimer;
+    App.el.msgInput?.addEventListener('input', () => {
       App.socket.emit('typing', true);
-      clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => {
-        App.socket.emit('typing', false);
-      }, 1000);
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => App.socket.emit('typing', false), 1000);
     });
+    
+    // Voice recording
+    App.el.voiceRecordBtn?.addEventListener('click', () => {
+      if (App.mediaRecorder && App.mediaRecorder.state === 'recording') {
+        stopRecording(false);
+      } else {
+        startRecording();
+      }
+    });
+    
+    App.el.cancelRecordBtn?.addEventListener('click', () => stopRecording(true));
+    App.el.sendRecordBtn?.addEventListener('click', () => stopRecording(false));
     
     // History
-    el.historyBtn?.addEventListener('click', () => {
-      loadCallHistory();
-      el.historyModal?.classList.remove('hidden');
+    App.el.historyBtn?.addEventListener('click', () => {
+      loadHistory();
+      App.el.historyModal?.classList.remove('hidden');
     });
     
-    el.closeHistoryBtn?.addEventListener('click', () => {
-      el.historyModal?.classList.add('hidden');
+    App.el.closeHistoryBtn?.addEventListener('click', () => {
+      App.el.historyModal?.classList.add('hidden');
     });
     
-    el.clearHistoryBtn?.addEventListener('click', clearCallHistory);
+    App.el.clearHistoryBtn?.addEventListener('click', clearHistory);
     
-    // Close modal on backdrop click
-    document.querySelector('.modal-backdrop')?.addEventListener('click', () => {
-      el.historyModal?.classList.add('hidden');
+    // Modal overlay
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', () => {
+        App.el.historyModal?.classList.add('hidden');
+      });
     });
     
-    // Theme Toggle
-    el.themeBtn?.addEventListener('click', () => {
+    // Theme
+    App.el.themeBtn?.addEventListener('click', () => {
       const html = document.documentElement;
-      const isDark = html.getAttribute('data-theme') === 'dark';
-      const newTheme = isDark ? 'light' : 'dark';
-      
-      html.setAttribute('data-theme', newTheme);
-      localStorage.setItem('theme', newTheme);
-      
-      if (el.themeBtn) {
-        el.themeBtn.textContent = newTheme === 'dark' ? '☀️' : '🌙';
-      }
+      const dark = html.getAttribute('data-theme') === 'dark';
+      html.setAttribute('data-theme', dark ? 'light' : 'dark');
+      localStorage.setItem('theme', dark ? 'light' : 'dark');
     });
     
-    // Enter key on room input
-    el.roomId?.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        createRoom();
+    // Before unload
+    window.addEventListener('beforeunload', e => {
+      if (App.room) {
+        e.preventDefault();
+        e.returnValue = 'Leave call?';
       }
     });
-  }
+  };
 
   // ============================================
-  // INITIALIZATION
+  // THEME
   // ============================================
-  function loadTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    
-    if (App.elements.themeBtn) {
-      App.elements.themeBtn.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
-    }
-  }
+  const loadTheme = () => {
+    const theme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+  };
 
-  function checkWebRTCSupport() {
+  // ============================================
+  // WEBRTC CHECK
+  // ============================================
+  const checkSupport = () => {
     if (!navigator.mediaDevices || !window.RTCPeerConnection) {
-      setConnectionStatus('WebRTC not supported', 'error');
-      showToast('Your browser does not support audio calls', 'error');
-      enableMainButtons(false);
+      setConnStatus('WebRTC not supported', 'error');
+      toast('Your browser does not support voice calls', 'error');
+      enableButtons(false);
       return false;
     }
     return true;
-  }
+  };
 
-  function init() {
-    log('Initializing HeartSpace Calls v5.0...', 'info');
+  // ============================================
+  // INIT
+  // ============================================
+  const init = () => {
+    log('HeartSpace Voice v5.5 starting...', 'info');
     
-    // Cache DOM elements
-    cacheElements();
-    
-    // Load theme
+    cacheDOM();
     loadTheme();
     
-    // Check WebRTC support
-    if (!checkWebRTCSupport()) {
-      return;
-    }
+    if (!checkSupport()) return;
     
-    // Initialize socket connection
     App.socket = io();
     
-    // Setup event handlers
-    setupSocketEvents();
-    setupUIEvents();
+    setupSocket();
+    setupUI();
     
-    // Generate initial room ID
-    if (App.elements.roomId && !App.elements.roomId.value) {
-      App.elements.roomId.value = generateRandomRoomId();
+    if (App.el.roomId && !App.el.roomId.value) {
+      App.el.roomId.value = randomRoom();
     }
     
-    // Load saved user name
-    const savedName = localStorage.getItem('userName');
-    if (savedName && App.elements.userName) {
-      App.elements.userName.value = savedName;
+    const name = localStorage.getItem('userName');
+    if (name && App.el.userName) {
+      App.el.userName.value = name;
     }
     
-    log('Initialization complete', 'success');
-  }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+    
+    log('Ready!', 'success');
+  };
 
-  // Start the app when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -1249,4 +1345,3 @@
   }
 
 })();
-

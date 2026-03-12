@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Awake</title>
+    <style>
+        :root {
+            cursor: none;
+            font-family: Arial, sans-serif;
+            background-image: linear-gradient(45deg, navy, rgba(0, 0, 255, 0.507), aqua);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+        }
+        .container {
+            position: absolute;
+            background-image: linear-gradient(45deg, navy, rgba(0, 0, 255, 0.507), aqua);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            animation: glow 0.1s infinite alternate;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+            height: 100px;
+            width: 140px;
+            top: 50%;
+            left: 50%;
+        }
+        h1 {
+            -webkit-text-fill-color: #ff00ea;
+            -webkit-text-stroke: 2px #420101;
+        }
+        p {
+            color: lime;
+
+        }
+
+        @keyframes glow {
+            0% {
+                box-shadow: 0 0 5px #f80000, 0 0 10px #ff7070, 0 0 15px #fc79ea, 0 0 20px #fff;
+            }
+            100% {
+                box-shadow: 0 0 10px #002fff, 0 0 20px #00ff6a, 0 0 30px #d0ff00, 0 0 40px #fff;
+            }
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LIVE</h1>
+        <p>The site is awake!</p>
+    </div>
+    <script>
+        const container = document.querySelector('.container');
+        document.addEventListener('mousemove', (e) => {
+            container.style.left = `${e.clientX}px`;
+            container.style.top = `${e.clientY}px`;
+        });
+    </script>
+</body>
+</html>

@@ -23,6 +23,7 @@
             text-align: center;
             animation: glow 0.1s infinite alternate;
             transform: translate(-50%, -50%);
+            transition: left 0.35s ease-out, top 0.35s ease-out;
             z-index: 1;
             height: 100px;
             width: 140px;
@@ -59,6 +60,14 @@
         document.addEventListener('mousemove', (e) => {
             container.style.left = `${e.clientX}px`;
             container.style.top = `${e.clientY}px`;
+        });
+        document.addEventListener('click', () => {
+            container.style.animation = 'none';
+            setTimeout(() => {
+                container.style.animation = '';
+            }, 500);
+
+
         });
     </script>
 </body>

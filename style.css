@@ -169,16 +169,17 @@ img {
    ================================================ */
 .cursor-glow {
   position: fixed;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(67, 183, 236, 0.568) 0%, transparent 70%);
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgb(110, 209, 255) 0%, transparent 70%);
   border-radius: 50%;
   pointer-events: none;
   transform: translate(-50%, -50%);
   z-index: 9999;
-  opacity: 0;
-  transition: opacity 0.3s;
+  opacity: 1;
+  transition: opacity 0.8s ease-out;
   mix-blend-mode: screen;
+  backdrop-filter: brightness(1.6) contrast(1.2);
 }
 
 [data-theme="dark"] .cursor-glow {
